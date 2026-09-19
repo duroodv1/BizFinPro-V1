@@ -1,0 +1,15 @@
+{
+  "name": "BizFinPro — Business Budget • ROI • NPV • IRR • Financial Projection",
+  "short_name": "BizFinPro",
+  "description": "Offline-first business financial planning, budgeting and investment analysis: CAPEX, OPEX, Revenue, P&L, Cash Flow, Working Capital, Financing (Konvensional / Syariah), ROI, NPV, IRR, Payback, Break-Even, Scenarios, Sensitivity, Ratios. Export to Excel, PDF, Word.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "lang": "ms",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
