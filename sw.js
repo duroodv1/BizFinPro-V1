@@ -1,5 +1,5 @@
 /* BizFinPro Service Worker — offline-first PWA */
-const CACHE = 'bizfinpro-v3';
+const CACHE = 'bizfinpro-v4';
 const ASSETS = [
   './',
   './index.html',

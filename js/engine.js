@@ -20,6 +20,7 @@
     { key:'inflation',       unit:'%',  auto:3,   decimals:1 },
     { key:'cogsPct',         unit:'%',  auto:55,  decimals:1 },
     { key:'opexGrowth',      unit:'%',  auto:4,   decimals:1 },
+    { key:'contingencyPct',  unit:'%',  auto:0,   decimals:1 },
     { key:'taxRate',         unit:'%',  auto:24,  decimals:1 },
     { key:'discountRate',    unit:'%',  auto:10,  decimals:2 },
     { key:'financingRate',   unit:'%',  auto:6,   decimals:2 },
@@ -33,7 +34,8 @@
   const OPEX_CATS = [
     ['salaries','Gaji'], ['rent','Sewa'], ['utilities','Utiliti'], ['marketing','Pemasaran'],
     ['transport','Pengangkutan'], ['insurance','Insurans'], ['maintenance','Penyelenggaraan'], ['software','Perisian'],
-    ['admin','Pentadbiran'], ['professional','Yuran Profesional'], ['telco','Telefon / Internet'], ['other','Perbelanjaan Lain']
+    ['admin','Pentadbiran'], ['professional','Yuran Profesional'], ['telco','Telefon / Internet'], ['other','Perbelanjaan Lain'],
+    ['contingency','Kontingensi']
   ];
   const CAPEX_CATS = ['property','renovation','machinery','equipment','vehicle','furniture','it','software','other'];
 
@@ -70,6 +72,9 @@
       revenue:{ streams:[] },
       cogs:{  },
       opex:{ categories:{}, salary:{ headcount:'', avgMonthly:'' } },
+      payroll:{ useDetailed: false, headcount:'', avgMonthly:'',
+        statutory:{ epfTier1Pct:13, epfTier2Pct:11, epfCeiling:5000, socsoPct:1.75, socsoCeiling:4000 },
+        escalationSet:null, scenarios:{ s5:5, s75:7.5, s10:10 } },
       financing:{
         conventional:{ loans:[] },
         islamic:{ structure:'murabahah',
@@ -109,6 +114,9 @@
     if (!p.startup.items) p.startup.items = [];
     if (!p.revenue.streams) p.revenue.streams = [];
     if (!p.opex.categories) p.opex.categories = {};
+    if (!p.payroll) p.payroll = { useDetailed:false, headcount:'', avgMonthly:'', statutory:{ epfTier1Pct:13, epfTier2Pct:11, epfCeiling:5000, socsoPct:1.75, socsoCeiling:4000 }, escalationSet:null, scenarios:{ s5:5, s75:7.5, s10:10 } };
+    if (!p.payroll.statutory) p.payroll.statutory = {};
+    if (!p.payroll.scenarios) p.payroll.scenarios = { s5:5, s75:7.5, s10:10 };
     if (!p.financing) p.financing = { conventional:{ loans:[] }, islamic:{} };
     if (!p.financing.conventional) p.financing.conventional = { loans:[] };
     if (!p.financing.islamic) p.financing.islamic = { structure:'murabahah' };
@@ -220,6 +228,79 @@
       if (Math.abs(hi - lo) < 1e-10) return mid;
     }
     return null;
+  }
+
+  /* ---------------- Payroll model ---------------- */
+  // Payroll projection with EPF (KWSP) + SOCSO (PERKESO) statutory on-cost and
+  // base-case escalation (central assumption or override).
+  function payrollProjection(p, N) {
+    const pl = p.payroll || { useDetailed:false };
+    const st = pl.statutory || {};
+    const epfLow = num(st.epfTier1Pct) || 0;   // wage <= ceiling
+    const epfHigh = num(st.epfTier2Pct) || 0;  // wage  > ceiling
+    const epfCeil = num(st.epfCeiling) || 0;
+    const socsoPct = num(st.socsoPct) || 0;
+    const socsoCeil = num(st.socsoCeiling) || 0;
+
+    const g = (k) => { const a = p.assumptions[k]; return a ? (a.manual !== '' && a.manual != null ? num(a.manual) : num(a.active !== undefined ? a.active : a.auto)) : 0; };
+    const headcount = num(pl.headcount);
+    const avgMonthly = num(pl.avgMonthly);
+
+    const empty = () => Array(N + 1).fill(0);
+    const annual = { gross:empty(), epf:empty(), socso:empty(), onCost:empty(), total:empty() };
+    const perHead = { annualSalary:Array(N + 1).fill(0), epf:Array(N + 1).fill(0), socso:Array(N + 1).fill(0), total:Array(N + 1).fill(0) };
+
+    const escBase = num(pl.escalationSet) / 100;                 // explicit override (nullable)
+    const baseEsc = pl.escalationSet == null ? g('opexGrowth') / 100 : escBase;  // base-case escalation
+
+    for (let y = 1; y <= N; y++) {
+      const salaryY = avgMonthly * 12 * Math.pow(1 + baseEsc, y - 1);
+      const epfPer = Math.min(salaryY, epfCeil) * epfLow / 100 + Math.max(0, salaryY - epfCeil) * epfHigh / 100;
+      const socsoPer = Math.min(salaryY, socsoCeil) * socsoPct / 100;
+      annual.gross[y] = salaryY * headcount;
+      annual.epf[y] = epfPer * headcount;
+      annual.socso[y] = socsoPer * headcount;
+      annual.onCost[y] = (epfPer + socsoPer) * headcount;
+      annual.total[y] = annual.gross[y] + annual.onCost[y];
+      perHead.annualSalary[y] = salaryY;
+      perHead.epf[y] = epfPer;
+      perHead.socso[y] = socsoPer;
+      perHead.total[y] = salaryY + epfPer + socsoPer;
+    }
+    return {
+      enabled: pl.useDetailed && headcount > 0 && avgMonthly > 0,
+      headcount, avgMonthly, baseEscalationPct: baseEsc * 100,
+      escalationUsedPct: (pl.escalationSet == null ? g('opexGrowth') : num(pl.escalationSet)),
+      epfLow, epfHigh, epfCeil, socsoPct, socsoCeil,
+      annual, perHead
+    };
+  }
+
+  // Sensitivity: total employer payroll cost under 3 escalation scenarios.
+  function payrollScenarios(p, N) {
+    const base = payrollProjection(p, N);
+    const st = (p.payroll && p.payroll.statutory) || {};
+    const epfLow = num(st.epfTier1Pct) || 0;
+    const epfHigh = num(st.epfTier2Pct) || 0;
+    const epfCeil = num(st.epfCeiling) || 0;
+    const socsoPct = num(st.socsoPct) || 0;
+    const socsoCeil = num(st.socsoCeiling) || 0;
+    const head = base.headcount, avg = base.avgMonthly;
+    const enabled = base.enabled;
+    const sc = {};
+    ['s5', 's75', 's10'].forEach((k) => {
+      const rate = num(p.payroll.scenarios[k]) / 100;
+      const gross = Array(N + 1).fill(0), total = Array(N + 1).fill(0);
+      for (let y = 1; y <= N; y++) {
+        const salaryY = avg * 12 * Math.pow(1 + rate, y - 1);
+        const epfPer = Math.min(salaryY, epfCeil) * epfLow / 100 + Math.max(0, salaryY - epfCeil) * epfHigh / 100;
+        const socsoPer = Math.min(salaryY, socsoCeil) * socsoPct / 100;
+        gross[y] = salaryY * head;
+        total[y] = (salaryY + epfPer + socsoPer) * head;
+      }
+      sc[k] = { ratePct: rate * 100, enabled, gross, total };
+    });
+    return { base, scenarios: sc };
   }
 
   /* ---------------- Seasonal weights ---------------- */
@@ -334,7 +415,7 @@
     const variableCogsY1 = revenueAnnual[1] * matPct;
 
     // --- OPEX ---
-    const epfPct = num(p.specialAssumptions.epfPct) / 100;
+    const payroll = payrollProjection(p, N);
     const cats = OPEX_CATS.map(([key, label]) => {
       const c = (p.opex.categories && p.opex.categories[key]) || {};
       return { key, label, monthly: c.monthly !== false, base: num(c.base), growthSet: c.growth === undefined || c.growth === '' ? null : num(c.growth) };
@@ -344,14 +425,32 @@
     const perCatAnnual = []; // array of {key,label, annual:[], }
     cats.forEach((c) => {
       const arr = Array(N + 1).fill(0);
+      // Detailed payroll overrides the flat "salaries" category (base-case escalation) — no double count.
+      if (c.key === 'salaries' && payroll.enabled) {
+        for (let y = 1; y <= N; y++) arr[y] = payroll.annual.total[y];
+        perCatAnnual.push({ key: c.key, label: c.label, monthly: true, base: null, annual: arr, fromPayroll: true });
+        return;
+      }
+      // Contingency (always computed): percentage of all other opex subtotal.
+      if (c.key === 'contingency') return;
       const effGrowth = c.growthSet === null ? opexGrowth : c.growthSet / 100;
       let y1 = c.monthly ? c.base * 12 : c.base;
-      if (c.key === 'salaries' && epfPct > 0) y1 = y1 * (1 + epfPct);
+      // Legacy: flat salaries get employer statutory % bump when the detailed payroll model is off.
+      if (c.key === 'salaries') { const e = num(p.specialAssumptions.epfPct) / 100; if (e > 0) y1 = y1 * (1 + e); }
       arr[1] = y1;
       for (let y = 2; y <= N; y++) arr[y] = arr[y - 1] * (1 + effGrowth);
       for (let y = 1; y <= N; y++) opexAnnual[y] += arr[y];
       perCatAnnual.push({ key:c.key, label:c.label, monthly:c.monthly, base:c.base, annual:arr });
     });
+    // Contingency / miscellaneous — derived as % of all other OPEX (auto: central contingencyPct assumption).
+    const contingencyPct = num(p.specialAssumptions.contingencyPct) > 0
+      ? num(p.specialAssumptions.contingencyPct) / 100
+      : (g('contingencyPct') / 100);
+    const contingencyAnnual = Array(N + 1).fill(0);
+    for (let y = 1; y <= N; y++) contingencyAnnual[y] = opexAnnual[y] * contingencyPct;
+    for (let y = 1; y <= N; y++) opexAnnual[y] += contingencyAnnual[y];
+    perCatAnnual.push({ key:'contingency', label:'Kontingensi', monthly:false, base:null, annual:contingencyAnnual, derivedPct: contingencyPct * 100 });
+    const employeeOnCost = payroll.enabled ? payroll.annual.onCost.reduce((a, b) => a + b, 0) : 0;
     const opexY1 = opexAnnual[1];
     const totalUnitsNotice = totalUnitsY1;
 
@@ -587,7 +686,9 @@
       revenue:{ streams, annual:revenueAnnual, monthly:monthlyRevenue, year1:year1RevBase, totalUnitsY1, monthLabels:MONTHS },
       seasonal,
       cogs:{ annual:cogsAnnual, variableY1:variableCogsY1, materialPct:matPct * 100 },
-      opex:{ categories:perCatAnnual, annual:opexAnnual, y1:opexY1 },
+      opex:{ categories:perCatAnnual, annual:opexAnnual, y1:opexY1, contingencyAnnual, contingencyPct: contingencyPct * 100, employeeOnCost },
+      payroll,
+      payrollScenarios: payrollScenarios(p, N),
       grossProfit, grossMargin,
       financing:{
         conventional:{ loans, schedules, annualInterest:convAnnualInterest, annualPrincipal:convAnnualPrincipal, annualPayment:convAnnualPayment, balance:convBalance, totalDrawn:convTotalDrawn, fees:convTotalFees },

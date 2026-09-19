@@ -120,6 +120,20 @@
       F.opex.categories.forEach((c) => rows.push(build(c.label, c.annual, true)));
       rows.push(build(t('pl.opex') + ' (' + t('total') + ')', F.opex.annual, true));
       SHEET(t('reports.expenses'), rows);
+
+      if (F.payroll && F.payroll.enabled) {
+        const pr = [[t('expenses.payroll_projection')].concat(years)];
+        pr.push(build(t('expenses.payroll_gross'), F.payroll.annual.gross, true));
+        pr.push(build('EPF (' + t('expenses.employer_oncost') + ')', F.payroll.annual.epf, true));
+        pr.push(build('SOCSO (' + t('expenses.employer_oncost') + ')', F.payroll.annual.socso, true));
+        pr.push(build(t('expenses.payroll_total_cost'), F.payroll.annual.total, true));
+        SHEET(t('expenses.payroll_title'), pr);
+
+        const ps = [[t('expenses.payroll_sensitivity')].concat(years)];
+        ps.push(build(t('scenarios.base') + ' (' + P(F.payrollScenarios.base.escalationUsedPct) + '%)', F.payrollScenarios.base.annual.total, true));
+        ['s5', 's75', 's10'].forEach((k) => ps.push(build(F.payrollScenarios.scenarios[k].ratePct + '%', F.payrollScenarios.scenarios[k].total, true)));
+        SHEET(t('expenses.payroll_sensitivity'), ps);
+      }
     }
 
     /* P&L */

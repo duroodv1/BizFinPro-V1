@@ -88,7 +88,15 @@
       salary_headcount: 'Bil. pekerja (gaji)', salary_avg: 'Purata gaji bulanan /pekerja', month1_amount: 'Jumlah bulanan',
       annual_amount: 'Jumlah tahunan', per_month_equivalent: 'bersamaan /bulan',
       employee_related: 'Gaji & berkaitan pekerja', salary_epf_pct: 'EPF/SOCSO/EIS majikan % (anggaran)',
-      periodic: 'Kekerapan', growth_blank_note: 'Kosongkan kadar pertumbuhan untuk guna andaian pusat', yearly: 'Tahunan'
+      periodic: 'Kekerapan', growth_blank_note: 'Kosongkan kadar pertumbuhan untuk guna andaian pusat', yearly: 'Tahunan',
+      contingency: 'Kontingensi / Pelbagai', torch: 'Lihat andaian OPEX (andaian pusat)',
+      payroll_title: 'Model Gaji & Statutori', payroll_note: 'Headcount × gaji bulanan + kos statutori majikan (KWSP/EPF + PERKESO/SOCSO). Apabila dihidupkan, ia menggantikan kategori Gaji rata.',
+      salary_escalation: 'Kenaikan gaji', blank_central: 'kosong = guna andaian pusat', per_head: 'kos/pekerja',
+      epf_low: 'EPF (KWSP) majikan — gaji ≤', epf_high: 'EPF (KWSP) majikan — gaji >', epf_ceiling: 'Had siling gaji EPF',
+      socso_pct: 'SOCSO (PERKESO) majikan', socso_ceiling: 'Siling gaji SOCSO (RM)',
+      payroll_projection: 'Unjuran Gaji', payroll_gross: 'Gaji kasar (asal)', employer_oncost: 'kos majikan',
+      payroll_total_cost: 'Jumlah Kos Majikan', payroll_sensitivity: 'Sensitiviti Kos Gaji',
+      sensitivity_note: 'Jumlah kos majikan penuh (gaji + EPF + SOCSO) di bawah setiap senario kenaikan gaji. Angka lain (P&L, NPV) guna senario asas.',
     },
 
     pl: {
@@ -195,6 +203,7 @@
       take: 'Ukuran'
     },
     scenarios: {
+      title: 'Senario', base: 'ASAS',
       revenue: 'Hasil', growth_pct: 'Pertumbuhan (%)', cogs_pct: 'COGS (%)', opex_pct: 'OPEX (%)', capex: 'CAPEX', financing: 'Pembiayaan',
       npv: 'NPV', irr: 'IRR', roi: 'ROI', net_profit: 'Untung Bersih (Thn 5)', be_units: 'BE Unit (Thn 1)',
       param: 'Parameter', multipler: 'Pengganda Ujian', impact: 'Kesan'
@@ -343,7 +352,15 @@
       salary_headcount: 'Salaried headcount', salary_avg: 'Average monthly salary /employee', month1_amount: 'Monthly amount',
       annual_amount: 'Annual amount', per_month_equivalent: 'equiv. per month',
       employee_related: 'Salaries & employee-related', salary_epf_pct: 'Employer EPF/SOCSO/EIS % (estimate)',
-      periodic: 'Frequency', growth_blank_note: 'Leave growth blank to use the central assumption', yearly: 'Annual'
+      periodic: 'Frequency', growth_blank_note: 'Leave growth blank to use the central assumption', yearly: 'Annual',
+      contingency: 'Contingency / Miscellaneous', torch: 'View OPEX assumptions (central assumptions)',
+      payroll_title: 'Salary & Statutory Model', payroll_note: 'Headcount × monthly salary + employer statutory on-cost (EPF/KWSP + SOCSO/PERKESO). When enabled it replaces the flat Salaries category.',
+      salary_escalation: 'Salary escalation', blank_central: 'blank = use central assumption', per_head: 'cost/employee',
+      epf_low: 'EPF (KWSP) employer — wage ≤', epf_high: 'EPF (KWSP) employer — wage >', epf_ceiling: 'EPF wage ceiling (RM)',
+      socso_pct: 'SOCSO (PERKESO) employer', socso_ceiling: 'SOCSO wage ceiling (RM)',
+      payroll_projection: 'Payroll Projection', payroll_gross: 'Gross salary', employer_oncost: 'employer on-cost',
+      payroll_total_cost: 'Total Employer Cost', payroll_sensitivity: 'Payroll Cost Sensitivity',
+      sensitivity_note: 'Full employer cost (salary + EPF + SOCSO) under each salary-escalation scenario. Other figures (P&L, NPV) use the base case.',
     },
 
     pl: {
@@ -450,6 +467,7 @@
     },total_assets: 'Total Assets', current_assets: 'Current Assets', current_liab: 'Current Liabilities', equity: 'Equity',
 
     scenarios: {
+      title: 'Scenario', base: 'BASE',
       revenue: 'Revenue', growth_pct: 'Growth (%)', cogs_pct: 'COGS (%)', opex_pct: 'OPEX (%)', capex: 'CAPEX', financing: 'Financing',
       npv: 'NPV', irr: 'IRR', roi: 'ROI', net_profit: 'Net Profit (Yr 5)', be_units: 'BE Units (Yr 1)',
       param: 'Parameter', multipler: 'Test Multiplier', impact: 'Impact'

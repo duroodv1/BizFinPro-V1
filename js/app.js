@@ -101,6 +101,8 @@
     },
     resetA(key) { M.resetToAuto(S.proj, key); markDirty(); scheduleSave(); refreshNow(); },
     setBusiness(field, value) { BizSet.set('business.' + field, value); },
+    setPayroll(path, value, instant) { BizSet.set('payroll.' + path, value, instant); },
+    setPayrollStat(key, value, instant) { BizSet.set('payroll.statutory.' + key, value, instant); },
     setSpecial(field, value) { BizSet.set('specialAssumptions.' + field, value); },
     setIslamic(path, value, instant) { BizSet.set('financing.islamic.' + path, value, instant); },
     setFinStruct(s) { setPath(S.proj, 'financing.islamic.structure', s); markDirty(); scheduleSave(); refreshNow(); },
@@ -810,31 +812,119 @@
   function renderOpex(el) {
     const p = S.proj;
     const F = finance();
+    const PR = p.payroll || {};
     const years = []; for (let y = 1; y <= F.N; y++) years.push('Y' + y);
+    const payrollEnabled = F.payroll.enabled;
     const catRows = M.OPEX_CATS.map(([key, label]) => {
+      const fc = F.opex.categories.find((x) => x.key === key) || { annual: Array(F.N + 1).fill(0) };
       const c = p.opex.categories[key] || { monthly: true, base: '', growth: '' };
-      const y1 = c.monthly !== false ? Number(c.base || 0) * 12 : Number(c.base || 0);
-      return '<tr>' +
-        '<td><b>' + t('expenses.' + key) + '</b></td>' +
-        '<td><div class="seg"><button data-okm-month="' + key + '" class="' + (c.monthly !== false ? 'on' : '') + '">' + t('expenses.monthly') + '</button><button data-okm-annual="' + key + '" class="' + (c.monthly === false ? 'on' : '') + '">' + t('expenses.annual') + '</button></div></td>' +
-        '<td><input type="number" step="any" min="0" data-okb="' + key + '" value="' + es(c.base) + '" style="max-width:120px"></td>' +
-        '<td><input type="number" step="any" data-okg="' + key + '" value="' + es(c.growth) + '" placeholder="' + pct(F.assumptions.opexGrowth * 100, 0) + '" style="max-width:80px"></td>' +
+      const derived = key === 'contingency' || (key === 'salaries' && payrollEnabled);
+      const derivedNote = key === 'contingency'
+        ? ' ≈ ' + FMT.num(fc.derivedPct, 1) + '% × OPEX lain'
+        : (key === 'salaries' && payrollEnabled ? ' daripada model gaji' : '');
+      const y1 = derived ? fc.annual[1] : (c.monthly !== false ? Number(c.base || 0) * 12 : Number(c.base || 0));
+      const baseCell = derived
+        ? '<span class="num" style="opacity:.75">' + (key === 'contingency' ? FMT.num(fc.derivedPct, 1) + '%' : '—') + '</span>'
+        : '<input type="number" step="any" min="0" data-okb="' + key + '" value="' + es(c.base) + '" style="max-width:120px">';
+      const growthCell = derived
+        ? '<span class="num" style="opacity:.75">auto</span>'
+        : '<input type="number" step="any" data-okg="' + key + '" value="' + es(c.growth) + '" placeholder="' + pct(F.assumptions.opexGrowth * 100, 0) + '" style="max-width:80px">';
+      return '<tr' + (derived ? ' class="derived"' : '') + '>' +
+        '<td><b>' + t('expenses.' + key) + '</b><div class="tiny">' + es(derivedNote) + '</div></td>' +
+        '<td>' + (derived ? '' : '<div class="seg"><button data-okm-month="' + key + '" class="' + (c.monthly !== false ? 'on' : '') + '">' + t('expenses.monthly') + '</button><button data-okm-annual="' + key + '" class="' + (c.monthly === false ? 'on' : '') + '">' + t('expenses.annual') + '</button></div>') + '</td>' +
+        '<td>' + baseCell + '</td>' +
+        '<td>' + growthCell + '</td>' +
         '<td class="r"><b class="num">' + money(y1) + '</b></td>' +
-        '<td class="r num">' + money(F.opex.categories.find((x) => x.key === key).annual[F.N]) + '</td>' +
+        '<td class="r num">' + money(fc.annual[F.N]) + '</td>' +
         '</tr>';
     }).join('');
 
+    const totalRow = '<tr class="total"><td><b>' + t('total') + ' OPEX</b></td><td></td><td></td><td></td><td class="r"><b class="num">' + money(F.opex.y1) + '</b></td><td class="r num"><b>' + money(F.opex.annual[F.N]) + '</b></td></tr>';
+
     el.innerHTML =
-      '<div class="card"><div class="card-title"><h3>' + es(t('expenses.title')) + '</h3></div>' +
-      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('expenses.title') + '</th><th>' + t('expenses.periodic') + '</th><th>' + (t('expenses.monthly') + ' / ' + t('expenses.annual') + ' RM') + '</th><th>' + t('expenses.growth') + ' %</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th></tr></thead><tbody>' + catRows + '</tbody></table></div>' +
-      '<div class="tiny" style="margin-top:6px">' + es(t('expenses.growth_blank_note')) + ': ' + pct(F.assumptions.opexGrowth * 100, 0) + ' (andaian pusat)</div></div>';
+      '<div class="card"><div class="card-title"><h3>' + es(t('expenses.title')) + '</h3><span class="hint">' + es(t('expenses.growth_blank_note')) + ': ' + pct(F.assumptions.opexGrowth * 100, 0) + '</span></div>' +
+      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('expenses.title') + '</th><th>' + t('expenses.periodic') + '</th><th>' + (t('expenses.monthly') + ' / ' + t('expenses.annual') + ' RM') + '</th><th>' + t('expenses.growth') + ' %</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th></tr></thead><tbody>' + catRows + totalRow + '</tbody></table></div>' +
+      '<div style="margin-top:12px"><button class="btn ghost" id="btn-torch-opex">💡 ' + es(t('expenses.torch')) + '</button></div></div>' +
+      payrollCard() +
+      payrollSensitivityCard() +
+      '<div class="card section-bump"><div class="card-title"><h3>📈 ' + es(t('expenses.title')) + ' — ' + es(t('revenue.yearly_title')) + '</h3></div><div class="chart-box" id="ch-opex-page"></div><div class="legend" id="lg-opex-page"></div></div>';
+    document.getElementById('btn-torch-opex').addEventListener('click', () => go('budget'));
     bindOpex(el);
     el.querySelectorAll('[data-okm-month]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okm-month'), 'monthly', true, true)));
     el.querySelectorAll('[data-okm-annual]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okm-annual'), 'monthly', false, true)));
     el.querySelectorAll('[data-okb]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okb'), 'base', i.value, true)));
     el.querySelectorAll('[data-okg]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okg'), 'growth', i.value)));
+
+    if (document.getElementById('ch-opex-page')) {
+      Charts.groupBar(document.getElementById('ch-opex-page'), years,
+        F.opex.categories.filter((c) => c.annual[1] > 0 || c.key === 'salaries').map((c, i) => ({ name: t('expenses.' + c.key) || c.label, data: c.annual.slice(1), color: Charts.PALETTE[i % Charts.PALETTE.length] })),
+        { labels: years, legend: document.getElementById('lg-opex-page') });
+    }
+    bindPayroll(el);
   }
   function bindOpex(el) { /* bound inline above */ }
+
+  function payrollCard() {
+    const p = S.proj, F = finance();
+    const PR = p.payroll || {};
+    const ST = PR.statutory || {};
+    const py = F.payroll;
+    return '<div class="card section-bump"><div class="card-title"><h3>👥 ' + es(t('expenses.payroll_title')) + '</h3>' +
+      '<div class="toggle"><input type="checkbox" data-bind="payroll.useDetailed" ' + (PR.useDetailed ? 'checked' : '') + '><span class="tk"></span></div></div>' +
+      '<div class="alert info"><span class="ico">ℹ️</span><div>' + es(t('expenses.payroll_note')) + '</div></div>' +
+      '<div class="grid g3">' +
+        '<div class="fld"><label>' + es(t('expenses.salary_headcount')) + '</label><input type="number" min="0" step="1" data-bind="payroll.headcount" value="' + es(PR.headcount) + '" ' + (PR.useDetailed ? '' : 'disabled') + '></div>' +
+        '<div class="fld"><label>' + es(t('expenses.salary_avg')) + ' (RM)</label><input type="number" min="0" step="any" data-bind="payroll.avgMonthly" value="' + es(PR.avgMonthly) + '" ' + (PR.useDetailed ? '' : 'disabled') + '></div>' +
+        '<div class="fld"><label>' + es(t('expenses.salary_escalation')) + ' % (' + es(t('expenses.blank_central')) + ' ' + pct(F.assumptions.opexGrowth * 100, 0) + '%)</label><input type="number" min="0" step="any" data-bind="payroll.escalationSet" value="' + es(PR.escalationSet == null ? '' : PR.escalationSet) + '" placeholder="' + pct(F.assumptions.opexGrowth * 100, 0) + '"></div>' +
+      '</div>' +
+      '<div class="grid g3" style="margin-top:10px">' +
+        '<div class="fld"><label>' + es(t('expenses.epf_low')) + ' % (≤ RM' + FMT.num(ST.epfCeiling || 0, 0) + ')</label><input type="number" min="0" step="any" data-bind="payroll.statutory.epfTier1Pct" value="' + es(ST.epfTier1Pct) + '"></div>' +
+        '<div class="fld"><label>' + es(t('expenses.epf_high')) + ' % (&gt; RM' + FMT.num(ST.epfCeiling || 0, 0) + ')</label><input type="number" min="0" step="any" data-bind="payroll.statutory.epfTier2Pct" value="' + es(ST.epfTier2Pct) + '"></div>' +
+        '<div class="fld"><label>' + es(t('expenses.epf_ceiling')) + ' (RM)</label><input type="number" min="0" step="any" data-bind="payroll.statutory.epfCeiling" value="' + es(ST.epfCeiling) + '"></div>' +
+        '<div class="fld"><label>' + es(t('expenses.socso_pct')) + ' %</label><input type="number" min="0" step="any" data-bind="payroll.statutory.socsoPct" value="' + es(ST.socsoPct) + '"></div>' +
+        '<div class="fld"><label>' + es(t('expenses.socso_ceiling')) + ' (RM)</label><input type="number" min="0" step="any" data-bind="payroll.statutory.socsoCeiling" value="' + es(ST.socsoCeiling) + '"></div>' +
+      '</div>' +
+      '<div class="tbl-wrap" style="margin-top:12px"><table class="data"><thead><tr><th>' + es(t('expenses.payroll_projection')) + '</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th></tr></thead><tbody>' +
+        '<tr><td>' + es(t('expenses.payroll_gross')) + '</td><td class="r num">' + money(py.annual.gross[1]) + '</td><td class="r num">' + money(py.annual.gross[F.N]) + '</td></tr>' +
+        '<tr><td>EPF (' + es(t('expenses.employer_oncost')) + ')</td><td class="r num">' + money(py.annual.epf[1]) + '</td><td class="r num">' + money(py.annual.epf[F.N]) + '</td></tr>' +
+        '<tr><td>SOCSO (' + es(t('expenses.employer_oncost')) + ')</td><td class="r num">' + money(py.annual.socso[1]) + '</td><td class="r num">' + money(py.annual.socso[F.N]) + '</td></tr>' +
+        '<tr class="total"><td><b>' + es(t('expenses.payroll_total_cost')) + '</b></td><td class="r"><b class="num">' + money(py.annual.total[1]) + '</b></td><td class="r"><b class="num">' + money(py.annual.total[F.N]) + '</b></td></tr>' +
+      '</tbody></table></div>' +
+      '<div class="tiny" style="margin-top:6px">' + es(t('expenses.blank_central')) + ': ' + es(t('budget.central')) + ' ' + pct(F.assumptions.opexGrowth * 100, 0) + '% · ' + es(t('expenses.per_head')) + ': RM ' + FMT.num(py.perHead.total[F.N], 0) + ' (Y' + F.N + ')</div></div>';
+  }
+
+  function payrollSensitivityCard() {
+    const p = S.proj, F = finance();
+    const PS = F.payrollScenarios;
+    const base = PS.base, sc = PS.scenarios;
+    if (!base.enabled) return '';
+    const sum = (arr) => { let s = 0; for (let y = 1; y <= F.N; y++) s += arr[y] || 0; return s; };
+    const baseSum = sum(base.annual.total);
+    const scRow = (k) => { const tot = sum(sc[k].total); return '<tr><td><b>' + FMT.num(sc[k].ratePct, 1) + '%</b></td>' +
+      '<td class="r num">' + money(sc[k].total[1]) + '</td><td class="r num">' + money(sc[k].total[F.N]) + '</td><td class="r num">' + money(tot) + '</td><td class="r num">' + money(tot - baseSum) + '</td></tr>'; };
+    return '<div class="card section-bump"><div class="card-title"><h3>📊 ' + es(t('expenses.payroll_sensitivity')) + ' — ' + es(t('expenses.salary_escalation')) + '</h3></div>' +
+      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('scenarios.title') + '</th><th class="r">' + es(t('expenses.payroll_total_cost')) + ' Y1</th><th class="r">Y' + F.N + '</th><th class="r">' + es(t('total')) + ' Y1–Y' + F.N + '</th><th class="r">Δ vs ' + es(t('scenarios.base')) + '</th></tr></thead><tbody>' +
+      '<tr><td>' + es(t('scenarios.base')) + ' (' + FMT.num(base.escalationUsedPct, 1) + '%)</td><td class="r num">' + money(base.annual.total[1]) + '</td><td class="r num">' + money(base.annual.total[F.N]) + '</td><td class="r num">' + money(baseSum) + '</td><td class="r">—</td></tr>' +
+      scRow('s5') + scRow('s75') + scRow('s10') +
+      '</tbody></table></div>' +
+      '<div class="tiny" style="margin-top:6px">' + es(t('expenses.sensitivity_note')) + '</div></div>';
+  }
+
+  function bindPayroll(el) {
+    ['useDetailed', 'headcount', 'avgMonthly', 'escalationSet'].forEach((f) => {
+      const i = el.querySelector('[data-bind="payroll.' + f + '"]');
+      if (!i || i._bf) return; i._bf = 1;
+      i.addEventListener(i.type === 'checkbox' ? 'change' : 'input', () => {
+        const v = i.type === 'checkbox' ? i.checked : i.value;
+        BizSet.setPayroll(f, v, true);
+      });
+    });
+    ['epfTier1Pct', 'epfTier2Pct', 'epfCeiling', 'socsoPct', 'socsoCeiling'].forEach((k) => {
+      const i = el.querySelector('[data-bind="payroll.statutory.' + k + '"]');
+      if (!i || i._bf) return; i._bf = 1;
+      i.addEventListener('input', () => BizSet.setPayrollStat(k, i.value, true));
+    });
+  }
 
   /* ============================================================
      PROFIT & LOSS
@@ -1585,9 +1675,9 @@
   function bindInputs(root) {
     root.querySelectorAll('[data-bind]').forEach((inp) => {
       const path = inp.getAttribute('data-bind');
-      const type = inp.tagName === 'SELECT' ? 'change' : 'input';
+      const type = inp.tagName === 'SELECT' ? 'change' : (inp.type === 'checkbox' ? 'change' : 'input');
       inp.addEventListener(type, () => {
-        BizSet.set(path, inp.value, type === 'change');
+        BizSet.set(path, inp.type === 'checkbox' ? inp.checked : inp.value, true);
       });
     });
     // assumptions quick-bind (working capital days)
