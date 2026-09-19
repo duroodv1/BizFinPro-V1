@@ -416,32 +416,47 @@
 
     // --- OPEX ---
     const payroll = payrollProjection(p, N);
-    const cats = OPEX_CATS.map(([key, label]) => {
-      const c = (p.opex.categories && p.opex.categories[key]) || {};
-      return { key, label, monthly: c.monthly !== false, base: num(c.base), growthSet: c.growth === undefined || c.growth === '' ? null : num(c.growth) };
-    });
     const opexAnnual = Array(N + 1).fill(0);
-    const opexMonthly = [];
-    const perCatAnnual = []; // array of {key,label, annual:[], }
-    cats.forEach((c) => {
-      const arr = Array(N + 1).fill(0);
-      // Detailed payroll overrides the flat "salaries" category (base-case escalation) — no double count.
-      if (c.key === 'salaries' && payroll.enabled) {
+    const perCatAnnual = []; // {key,label,monthly,monthlyBase,annualBase,annual:[],fromPayroll?}
+    const OPEX_LABELS = Object.fromEntries(OPEX_CATS.map((k) => [k[0], k[1]]));
+    const baseOf = (c) => (c.base !== undefined && c.base !== '' ? num(c.base) : 0);
+    const monthlyOf = (c) => (c.monthlyBase !== undefined && c.monthlyBase !== '' ? num(c.monthlyBase) : baseOf(c));
+    const annualOf = (c) => (c.annualBase !== undefined && c.annualBase !== '' ? num(c.annualBase) : baseOf(c));
+    Object.entries(p.opex.categories || {}).forEach(([key, raw]) => {
+      const c = raw || {};
+      if (c.hidden) return;                                    // deleted (hidden) row → excluded from computation
+      const monthly = c.monthly !== false;
+      const label = (c.label && String(c.label).trim()) ? String(c.label).trim() : (OPEX_LABELS[key] || key);
+      const growthSet = c.growth === undefined || c.growth === '' ? null : num(c.growth);
+      // Derived contingency is computed separately below.
+      if (key === 'contingency') return;
+      // Detailed payroll replaces the flat "salaries" category. The salaries row becomes
+      // display-only here; the authoritative payroll cost is added exactly once below.
+      if (key === 'salaries' && payroll.enabled) {
+        const arr = Array(N + 1).fill(0);
         for (let y = 1; y <= N; y++) arr[y] = payroll.annual.total[y];
-        perCatAnnual.push({ key: c.key, label: c.label, monthly: true, base: null, annual: arr, fromPayroll: true });
+        perCatAnnual.push({ key, label, monthly: true, monthlyBase: null, annualBase: null, annual: arr, fromPayroll: true, displayOnly: true });
         return;
       }
-      // Contingency (always computed): percentage of all other opex subtotal.
-      if (c.key === 'contingency') return;
-      const effGrowth = c.growthSet === null ? opexGrowth : c.growthSet / 100;
-      let y1 = c.monthly ? c.base * 12 : c.base;
+      const effGrowth = growthSet === null ? opexGrowth : growthSet / 100;
+      let y1 = monthly ? monthlyOf(c) * 12 : annualOf(c);
       // Legacy: flat salaries get employer statutory % bump when the detailed payroll model is off.
-      if (c.key === 'salaries') { const e = num(p.specialAssumptions.epfPct) / 100; if (e > 0) y1 = y1 * (1 + e); }
+      if (key === 'salaries') { const e = num(p.specialAssumptions.epfPct) / 100; if (e > 0) y1 = y1 * (1 + e); }
+      const arr = Array(N + 1).fill(0);
       arr[1] = y1;
       for (let y = 2; y <= N; y++) arr[y] = arr[y - 1] * (1 + effGrowth);
       for (let y = 1; y <= N; y++) opexAnnual[y] += arr[y];
-      perCatAnnual.push({ key:c.key, label:c.label, monthly:c.monthly, base:c.base, annual:arr });
+      perCatAnnual.push({ key, label, monthly, monthlyBase: monthly ? monthlyOf(c) : null, annualBase: monthly ? null : annualOf(c), annual: arr });
     });
+    // Authoritative payroll cost — counted exactly once (the salaries row above is display-only when enabled).
+    if (payroll.enabled) {
+      for (let y = 1; y <= N; y++) opexAnnual[y] += payroll.annual.total[y];
+      if (!perCatAnnual.some((c) => c.key === 'salaries')) {
+        const arr = Array(N + 1).fill(0);
+        for (let y = 1; y <= N; y++) arr[y] = payroll.annual.total[y];
+        perCatAnnual.push({ key: 'salaries', label: OPEX_LABELS.salaries || 'Gaji', monthly: true, monthlyBase: null, annualBase: null, annual: arr, fromPayroll: true, displayOnly: true });
+      }
+    }
     // Contingency / miscellaneous — derived as % of all other OPEX (auto: central contingencyPct assumption).
     const contingencyPct = num(p.specialAssumptions.contingencyPct) > 0
       ? num(p.specialAssumptions.contingencyPct) / 100
@@ -449,10 +464,9 @@
     const contingencyAnnual = Array(N + 1).fill(0);
     for (let y = 1; y <= N; y++) contingencyAnnual[y] = opexAnnual[y] * contingencyPct;
     for (let y = 1; y <= N; y++) opexAnnual[y] += contingencyAnnual[y];
-    perCatAnnual.push({ key:'contingency', label:'Kontingensi', monthly:false, base:null, annual:contingencyAnnual, derivedPct: contingencyPct * 100 });
+    perCatAnnual.push({ key:'contingency', label: OPEX_LABELS.contingency || 'Kontingensi', monthly:false, derivedPct: contingencyPct * 100, annual: contingencyAnnual });
     const employeeOnCost = payroll.enabled ? payroll.annual.onCost.reduce((a, b) => a + b, 0) : 0;
     const opexY1 = opexAnnual[1];
-    const totalUnitsNotice = totalUnitsY1;
 
     // --- financing ---
     const conv = p.financing.conventional || { loans:[] };
@@ -805,7 +819,7 @@
     if (revenueMult != null) { (c.revenue.streams || []).forEach((s) => { s.monthlyVolume = num(s.monthlyVolume) * revenueMult; if (s.monthlyRevenue) s.monthlyRevenue = num(s.monthlyRevenue) * revenueMult; }); }
     if (growthPct != null) setManual(c, 'revenueGrowth', growthPct);
     if (cogsPct != null) { setManual(c, 'cogsPct', cogsPct); if (!blank(c.specialAssumptions.materialPct)) c.specialAssumptions.materialPct = cogsPct; }
-    if (opexPct != null) { Object.keys(c.opex.categories || {}).forEach((k) => { c.opex.categories[k].base = num(c.opex.categories[k].base) * (1 + opexPct / 100); }); }
+    if (opexPct != null) { Object.keys(c.opex.categories || {}).forEach((k) => { const cat = c.opex.categories[k]; if (!cat) return; const f = 1 + opexPct / 100; ['base','monthlyBase','annualBase'].forEach((field) => { if (cat[field] !== undefined && cat[field] !== '') cat[field] = num(cat[field]) * f; }); }); }
     if (capexPct != null) { (c.capex.items || []).forEach((it) => { it.unitCost = num(it.unitCost) * (1 + capexPct / 100); }); }
     return c;
   }

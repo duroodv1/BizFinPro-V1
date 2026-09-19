@@ -138,8 +138,26 @@
     },
     setOpex(key, field, value, instant) {
       const c = S.proj.opex.categories[key] || (S.proj.opex.categories[key] = { monthly: true, base: '', growth: '' });
+      // When toggling monthly<->annual, convert the amount so the ANNUAL total is preserved.
+      if (field === 'monthly' && !!value !== (c.monthly !== false) && c.base !== undefined && c.base !== '') {
+        const n = Number(c.base) || 0;
+        c.base = value ? Math.round(n / 12 * 100) / 100 : Math.round(n * 12 * 100) / 100;
+      }
       c[field] = value; markDirty(); scheduleSave();
       (instant ? refreshNow : refreshSoon)(rememberFocusPath());
+    },
+    addOpexItem() {
+      const id = 'opx' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+      S.proj.opex.categories[id] = { label: '', monthly: true, base: '', growth: '' };
+      markDirty(); scheduleSave(); refreshNow();
+    },
+    delOpexItem(key) {
+      const c = S.proj.opex.categories[key] || (S.proj.opex.categories[key] = {});
+      c.hidden = true; markDirty(); scheduleSave(); refreshNow();
+    },
+    restoreOpexItem(key) {
+      const c = S.proj.opex.categories[key] || (S.proj.opex.categories[key] = {});
+      delete c.hidden; markDirty(); scheduleSave(); refreshNow();
     },
     addLoan() {
       S.proj.financing.conventional.loans.push({ id: M.uid(), name: '', structure: 'term_loan', amount: '', rateMode: 'auto', manualRate: '', tenureYears: 5, freq: 'monthly', graceMonths: 0, fees: '', startDate: S.proj.startDate });
@@ -815,49 +833,95 @@
     const PR = p.payroll || {};
     const years = []; for (let y = 1; y <= F.N; y++) years.push('Y' + y);
     const payrollEnabled = F.payroll.enabled;
-    const catRows = M.OPEX_CATS.map(([key, label]) => {
+    const builtIns = M.OPEX_CATS.map((c) => c[0]);
+    const opexName = (key) => { const uk = t('expenses.' + key); return uk !== 'expenses.' + key ? uk : key; };
+    // stable row order: visible custom additions first (after built-ins); hidden items → restore list
+    const allKeys = Object.keys(p.opex.categories || {});
+    const customKeys = allKeys.filter((k) => !builtIns.includes(k) && !(p.opex.categories[k] && p.opex.categories[k].hidden));
+    const hiddenKeys = allKeys.filter((k) => p.opex.categories[k] && p.opex.categories[k].hidden);
+    const rowKeys = builtIns.filter((k) => !(p.opex.categories[k] && p.opex.categories[k].hidden)).concat(customKeys);
+    const restoreChips = hiddenKeys.map((k) => {
+      const label = (p.opex.categories[k].label && String(p.opex.categories[k].label).trim()) || opexName(k);
+      return '<button class="chip ghost sm" id="restore-opex-' + k + '" title="' + es(t('common.restore')) + '">↺ ' + es(label) + '</button>';
+    }).join(' ');
+
+    const catRows = rowKeys.map((key) => {
+      const c = (p.opex.categories && p.opex.categories[key]) || {};
       const fc = F.opex.categories.find((x) => x.key === key) || { annual: Array(F.N + 1).fill(0) };
-      const c = p.opex.categories[key] || { monthly: true, base: '', growth: '' };
+      const label = (c.label && String(c.label).trim()) || opexName(key);
+      const monthly = c.monthly !== false;
       const derived = key === 'contingency' || (key === 'salaries' && payrollEnabled);
-      const derivedNote = key === 'contingency'
-        ? ' ≈ ' + FMT.num(fc.derivedPct, 1) + '% × OPEX lain'
-        : (key === 'salaries' && payrollEnabled ? ' daripada model gaji' : '');
-      const y1 = derived ? fc.annual[1] : (c.monthly !== false ? Number(c.base || 0) * 12 : Number(c.base || 0));
-      const baseCell = derived
-        ? '<span class="num" style="opacity:.75">' + (key === 'contingency' ? FMT.num(fc.derivedPct, 1) + '%' : '—') + '</span>'
-        : '<input type="number" step="any" min="0" data-okb="' + key + '" value="' + es(c.base) + '" style="max-width:120px">';
-      const growthCell = derived
-        ? '<span class="num" style="opacity:.75">auto</span>'
-        : '<input type="number" step="any" data-okg="' + key + '" value="' + es(c.growth) + '" placeholder="' + pct(F.assumptions.opexGrowth * 100, 0) + '" style="max-width:80px">';
-      return '<tr' + (derived ? ' class="derived"' : '') + '>' +
-        '<td><b>' + t('expenses.' + key) + '</b><div class="tiny">' + es(derivedNote) + '</div></td>' +
-        '<td>' + (derived ? '' : '<div class="seg"><button data-okm-month="' + key + '" class="' + (c.monthly !== false ? 'on' : '') + '">' + t('expenses.monthly') + '</button><button data-okm-annual="' + key + '" class="' + (c.monthly === false ? 'on' : '') + '">' + t('expenses.annual') + '</button></div>') + '</td>' +
-        '<td>' + baseCell + '</td>' +
-        '<td>' + growthCell + '</td>' +
+      const isCustom = customKeys.includes(key);
+      const freqToggle = derived ? '' :
+        '<div class="seg">' +
+          '<button data-okm-month="' + key + '" class="' + (monthly ? 'on' : '') + '">' + t('expenses.monthly') + '</button>' +
+          '<button data-okm-annual="' + key + '" class="' + (monthly ? '' : 'on') + '">' + t('expenses.annual') + '</button>' +
+        '</div>';
+      const nameCell = (isCustom && !derived)
+        ? '<input type="text" data-okn="' + key + '" value="' + es(label) + '" placeholder="' + t('common.name') + '" style="min-width:120px">'
+        : '<b>' + es(label) + '</b>';
+      if (derived) {
+        const note = key === 'contingency'
+          ? '≈ ' + FMT.num(fc.derivedPct, 1) + '% × ' + t('expenses.other_opex')
+          : t('expenses.from_payroll');
+        return '<tr class="derived">' +
+          '<td>' + nameCell + '<div class="tiny">' + es(note) + '</div></td>' +
+          '<td>' + (key === 'contingency' ? t('expenses.annual') : t('expenses.monthly')) + '</td>' +
+          '<td class="r"><span class="num muted">' + money(fc.annual[1] / 12) + '</span></td>' +
+          '<td class="r"><span class="num muted">' + money(fc.annual[1]) + '</span></td>' +
+          '<td class="r"><span class="num muted">auto</span></td>' +
+          '<td class="r"><b class="num">' + money(fc.annual[1]) + '</b></td>' +
+          '<td class="r num">' + money(fc.annual[F.N]) + '</td>' +
+          '<td></td></tr>';
+      }
+      const baseVal = c.base === undefined || c.base === '' ? '' : c.base;
+      const monthlyVal = monthly ? baseVal : (Number(baseVal || 0) / 12);
+      const annualVal = monthly ? (Number(baseVal || 0) * 12) : baseVal;
+      const y1 = monthly ? Number(baseVal || 0) * 12 : Number(baseVal || 0);
+      return '<tr>' +
+        '<td>' + nameCell + '</td>' +
+        '<td>' + freqToggle + '</td>' +
+        '<td>' + (monthly
+          ? '<input type="number" step="any" min="0" data-okb="' + key + '" value="' + es(baseVal) + '" style="max-width:110px;text-align:right">'
+          : '<span class="num muted">' + money(monthlyVal) + '</span>') + '</td>' +
+        '<td>' + (monthly
+          ? '<span class="num muted">' + money(annualVal) + '</span>'
+          : '<input type="number" step="any" min="0" data-okb="' + key + '" value="' + es(baseVal) + '" style="max-width:110px;text-align:right">') + '</td>' +
+        '<td><input type="number" step="any" data-okg="' + key + '" value="' + es(c.growth) + '" placeholder="' + pct(F.assumptions.opexGrowth * 100, 0) + '" style="max-width:80px;text-align:right"></td>' +
         '<td class="r"><b class="num">' + money(y1) + '</b></td>' +
         '<td class="r num">' + money(fc.annual[F.N]) + '</td>' +
+        '<td><button class="icon-btn danger" data-ok-del="' + key + '" title="' + t('common.delete') + '">🗑</button></td>' +
         '</tr>';
     }).join('');
 
-    const totalRow = '<tr class="total"><td><b>' + t('total') + ' OPEX</b></td><td></td><td></td><td></td><td class="r"><b class="num">' + money(F.opex.y1) + '</b></td><td class="r num"><b>' + money(F.opex.annual[F.N]) + '</b></td></tr>';
+    const totalRow = '<tr class="total"><td><b>' + t('total') + ' OPEX</b></td><td></td><td></td><td></td><td></td><td class="r"><b class="num">' + money(F.opex.y1) + '</b></td><td class="r num"><b>' + money(F.opex.annual[F.N]) + '</b></td><td></td></tr>';
 
     el.innerHTML =
-      '<div class="card"><div class="card-title"><h3>' + es(t('expenses.title')) + '</h3><span class="hint">' + es(t('expenses.growth_blank_note')) + ': ' + pct(F.assumptions.opexGrowth * 100, 0) + '</span></div>' +
-      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('expenses.title') + '</th><th>' + t('expenses.periodic') + '</th><th>' + (t('expenses.monthly') + ' / ' + t('expenses.annual') + ' RM') + '</th><th>' + t('expenses.growth') + ' %</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th></tr></thead><tbody>' + catRows + totalRow + '</tbody></table></div>' +
+      '<div class="card"><div class="card-title"><h3>' + es(t('expenses.title')) + '</h3>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<button class="btn sm primary" id="add-opex">＋ ' + t('common.add') + '</button>' +
+        '<span class="hint">' + es(t('expenses.growth_blank_note')) + ': ' + pct(F.assumptions.opexGrowth * 100, 0) + '</span>' +
+      '</div></div>' +
+      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('expenses.title') + '</th><th>' + t('expenses.periodic') + '</th><th class="r">' + t('expenses.monthly') + ' (RM)</th><th class="r">' + t('expenses.annual') + ' (RM)</th><th class="r">' + t('expenses.growth') + ' %</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th><th></th></tr></thead><tbody>' + catRows + totalRow + '</tbody></table></div>' +
+      (restoreChips ? '<div style="margin-top:10px" class="tiny">' + es(t('common.restore_note')) + ': <span style="display:inline-flex;gap:6px;flex-wrap:wrap;vertical-align:middle">' + restoreChips + '</span></div>' : '') +
       '<div style="margin-top:12px"><button class="btn ghost" id="btn-torch-opex">💡 ' + es(t('expenses.torch')) + '</button></div></div>' +
       payrollCard() +
       payrollSensitivityCard() +
       '<div class="card section-bump"><div class="card-title"><h3>📈 ' + es(t('expenses.title')) + ' — ' + es(t('revenue.yearly_title')) + '</h3></div><div class="chart-box" id="ch-opex-page"></div><div class="legend" id="lg-opex-page"></div></div>';
     document.getElementById('btn-torch-opex').addEventListener('click', () => go('budget'));
     bindOpex(el);
+    document.getElementById('add-opex').addEventListener('click', () => BizSet.addOpexItem());
+    el.querySelectorAll('[data-ok-del]').forEach((b) => b.addEventListener('click', () => BizSet.delOpexItem(b.getAttribute('data-ok-del'))));
+    el.querySelectorAll('[id^="restore-opex-"]').forEach((b) => b.addEventListener('click', () => BizSet.restoreOpexItem(b.id.replace('restore-opex-', ''))));
     el.querySelectorAll('[data-okm-month]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okm-month'), 'monthly', true, true)));
     el.querySelectorAll('[data-okm-annual]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okm-annual'), 'monthly', false, true)));
+    el.querySelectorAll('[data-okn]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okn'), 'label', i.value, true)));
     el.querySelectorAll('[data-okb]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okb'), 'base', i.value, true)));
     el.querySelectorAll('[data-okg]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okg'), 'growth', i.value)));
 
     if (document.getElementById('ch-opex-page')) {
       Charts.groupBar(document.getElementById('ch-opex-page'), years,
-        F.opex.categories.filter((c) => c.annual[1] > 0 || c.key === 'salaries').map((c, i) => ({ name: t('expenses.' + c.key) || c.label, data: c.annual.slice(1), color: Charts.PALETTE[i % Charts.PALETTE.length] })),
+        F.opex.categories.filter((c) => c.key !== 'contingency').map((c, i) => ({ name: t('expenses.' + c.key) !== 'expenses.' + c.key ? t('expenses.' + c.key) : (c.label || c.key), data: c.annual.slice(1), color: Charts.PALETTE[i % Charts.PALETTE.length] })),
         { labels: years, legend: document.getElementById('lg-opex-page') });
     }
     bindPayroll(el);
