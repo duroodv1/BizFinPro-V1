@@ -124,7 +124,7 @@
       await tx('projects', 'readwrite', (os) => os.put(p));
       return p;
     },
-    async getProject(id) { return tx('projects', 'readonly', (os) => reqP(os.get(id))); },
+    async getProject(id) { return tx('projects', 'readonly', (os) => os.get(id)); },
     async listProjects() {
       const all = await tx('projects', 'readonly', (os) => os.getAll());
       return (all || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
