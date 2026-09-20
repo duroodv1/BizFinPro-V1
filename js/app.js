@@ -444,7 +444,17 @@
     Store.listProjects().then((list) => {
       const wrap = el.querySelector('#pj-list');
       if (!list.length) {
-        wrap.innerHTML = '<div class="card"><div class="empty"><div class="big">📁</div><h2 style="margin-bottom:6px">' + es(t('common.no_project')) + '</h2><p>' + es(t('common.select_project')) + '</p></div></div>';
+        wrap.innerHTML = '<div class="card"><div class="empty"><div class="big">📁</div><h2 style="margin-bottom:6px">' + es(t('common.no_project')) + '</h2><p>' + es(t('common.select_project')) + '</p>' +
+          '<div class="actions-row" style="justify-content:center;flex-wrap:wrap;margin-top:14px">' +
+            '<button class="btn primary" id="pj-new-first">＋ ' + es(t('common.new_project')) + '</button>' +
+            '<button class="btn ghost" id="pj-demo-k">🏢 ' + es(t('common.demo_k')) + '</button>' +
+            '<button class="btn ghost" id="pj-demo-s">🕌 ' + es(t('common.demo_s')) + '</button>' +
+          '</div></div></div>';
+        setTimeout(() => {
+          const n = wrap.querySelector('#pj-new-first'); if (n) n.addEventListener('click', () => newProjectModal());
+          const dk = wrap.querySelector('#pj-demo-k'); if (dk) dk.addEventListener('click', () => quickDemo('KONVENSIONAL'));
+          const ds = wrap.querySelector('#pj-demo-s'); if (ds) ds.addEventListener('click', () => quickDemo('SYARIAH'));
+        }, 0);
       } else {
         wrap.innerHTML = '<div class="pj-grid">' + list.map((p) => {
           const F2 = M.computeFinance(M.ensure(p));
@@ -480,6 +490,17 @@
       }
     });
   }
+  async function quickDemo(mode) {
+    const d = M.demoProject(mode);
+    d.updatedAt = Date.now();
+    await Store.putProject(d);
+    S.settings.demosSeeded = true;
+    await saveSettings().catch(() => {});
+    await setProject(d);
+    go('home');
+    UI.toast(t('common.' + (mode === 'SYARIAH' ? 'demo_s' : 'demo_k')) + ' ✓', 'ok');
+  }
+
   async function openProject(id) {
     const p = await Store.getProject(id);
     if (!p) { UI.toast('Project not found', 'err'); return; }
@@ -2018,12 +2039,18 @@
     document.getElementById('set-tax').addEventListener('change', async function () { S.settings.defaultTaxRate = Number(this.value) || 24; await saveSettings(); UI.toast(t('settings.tax_assumption') + ' ✓', 'ok'); });
     document.getElementById('btn-exp-json').addEventListener('click', async () => { const all = await Store.exportAll(); downloadJson(JSON.stringify(all, null, 2), 'BizFinPro_backup_' + FMT.todayISO() + '.json'); UI.toast(t('settings.export_json') + ' ✓', 'ok'); });
     document.getElementById('btn-imp-json').addEventListener('click', () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.onchange = () => { const f = i.files[0]; if (!f) return; const r = new FileReader(); r.onload = async () => { try { const j = JSON.parse(r.result); const ok = await Store.importAll(j); UI.toast(ok ? t('settings.restore_project') + ' ✓' : '✕ JSON tidak sah', ok ? 'ok' : 'err'); if (ok) { await loadSettings(); S.proj = null; go('projects'); } } catch (e) { UI.toast('✕ ' + e.message, 'err'); } }; r.readAsText(f); }; i.click(); });
-    document.getElementById('btn-demo-k').addEventListener('click', async () => { const d = M.demoProject('KONVENSIONAL'); await Store.putProject(d); await setProject(d); go('home'); UI.toast(t('common.demo_k') + ' ✓', 'ok'); });
-    document.getElementById('btn-demo-s').addEventListener('click', async () => { const d = M.demoProject('SYARIAH'); await Store.putProject(d); await setProject(d); go('home'); UI.toast(t('common.demo_s') + ' ✓', 'ok'); });
+    document.getElementById('btn-demo-k').addEventListener('click', async () => { await quickDemo('KONVENSIONAL'); });
+    document.getElementById('btn-demo-s').addEventListener('click', async () => { await quickDemo('SYARIAH'); });
     document.getElementById('btn-clear').addEventListener('click', () => {
       UI.modal(t('settings.clear_all'), '<p>' + es(t('settings.clear_all') + '?') + '</p>',
         '<button class="btn ghost" data-close>' + es(t('cancel')) + '</button><button class="btn danger" id="confirm-clear">' + es(t('common.delete')) + '</button>');
-      document.getElementById('confirm-clear').addEventListener('click', async () => { await Store.clearAll(); S.proj = null; S.projectId = null; S.F = null; UI.closeAllModals(); go('projects'); UI.toast(t('settings.clear_all') + ' ✓', 'ok'); });
+      document.getElementById('confirm-clear').addEventListener('click', async () => {
+        const hadSeeded = S.settings.demosSeeded;
+        await Store.clearAll();
+        S.settings = Object.assign({}, M.defaultSettings(), { demosSeeded: hadSeeded });
+        await saveSettings().catch(() => {});
+        S.proj = null; S.projectId = null; S.F = null; UI.closeAllModals(); go('projects'); UI.toast(t('settings.clear_all') + ' ✓', 'ok');
+      });
     });
     const bmk = document.getElementById('btn-mode-k');
     const bms = document.getElementById('btn-mode-s');
@@ -2075,6 +2102,9 @@
     await loadSettings();
     if (S.settings.lang) I18N.setLang(S.settings.lang);
     renderShell();
+    // Seed the two demo projects on first launch (once). Subsequent launches
+    // respect the user's project list — deleting all projects does not re-seed.
+    await seedDemoProjects();
     // SW registration (offline-first); works on http(s), ignored on file://
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
@@ -2092,6 +2122,21 @@
       return;
     }
     go('projects');
+  }
+
+  async function seedDemoProjects() {
+    try {
+      const list = await Store.listProjects();
+      // Seed demos only once, so a deliberate "clear all" is respected afterwards.
+      if (list.length === 0 && !S.settings.demosSeeded) {
+        const dk = M.demoProject('KONVENSIONAL');
+        const ds = M.demoProject('SYARIAH');
+        await Store.putProject(dk);
+        await Store.putProject(ds);
+        S.settings.demosSeeded = true;
+        await saveSettings();
+      }
+    } catch (e) { /* storage unavailable — demos load per-session below */ }
   }
 
   // expose for inline handlers

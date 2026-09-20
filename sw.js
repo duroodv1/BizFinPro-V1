@@ -1,10 +1,14 @@
 /* BizFinPro Service Worker — offline-first PWA */
-const CACHE = 'bizfinpro-v6';
+const CACHE = 'bizfinpro-v8';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './maskable-512.png',
+  './apple-touch-icon.png',
   './css/app.css',
   './js/i18n.js',
   './js/store.js',
@@ -43,7 +47,7 @@ self.addEventListener('fetch', (e) => {
     caches.match(e.request).then((hit) => {
       if (hit) return hit;
       return fetch(e.request).then((res) => {
-        if (res && res.status === 200 && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.svg') || url.pathname === '/' || url.pathname.endsWith('index.html') || url.pathname.endsWith('.webmanifest'))) {
+        if (res && res.status === 200 && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.svg') || url.pathname.endsWith('.png') || url.pathname === '/' || url.pathname.endsWith('index.html') || url.pathname.endsWith('.webmanifest'))) {
           const clone = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request.url, clone));
         }
