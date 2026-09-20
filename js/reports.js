@@ -4,7 +4,7 @@
   // Section ids in report order (mode-filtered)
   const ORDER = [
     'cover','exec_summary','profile','mode','assumptions','investment','capex','revenue','cogs','expenses',
-    'pl','cashflow','wc','financing','depreciation','breakeven','roi','npv','irr','payback',
+    'pl','cashflow','wc','financing','depreciation','acc','analytics','breakeven','roi','npv','irr','payback',
     'scenarios','sensitivity','ratios','budget','summary'
   ];
   const SYARIAH_EXTRA = ['islamic','screening','review','status','disclaimer'];

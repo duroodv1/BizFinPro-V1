@@ -377,9 +377,12 @@
     const streams = (p.revenue.streams || []).map((s) => ({
       id:s.id, name:s.name || '', type:s.type || 'product',
       monthlyVolume:num(s.monthlyVolume), unitPrice:num(s.unitPrice), monthlyRevenue:num(s.monthlyRevenue),
-      growth: num(s.growth), useRevenue:s.useRevenue === true
+      discountPct:num(s.discountPct), growth: num(s.growth), useRevenue:s.useRevenue === true
     }));
-    const year1RevBase = streams.reduce((acc, s) => acc + (s.useRevenue ? s.monthlyRevenue : s.monthlyVolume * s.unitPrice) * 12, 0);
+    const effMonthlyOf = (s) => s.useRevenue
+      ? s.monthlyRevenue * (1 - s.discountPct / 100)
+      : s.monthlyVolume * s.unitPrice * (1 - s.discountPct / 100);
+    const year1RevBase = streams.reduce((acc, s) => acc + effMonthlyOf(s) * 12, 0);
     const seasonAdj = num(p.specialAssumptions.seasonAdj) || 1;
     const peakMonth = num(p.specialAssumptions.peakMonth) || 5;
     const seasonal = seasonalWeights(seasonAdj, peakMonth);
@@ -398,26 +401,48 @@
     }
     const totalUnitsY1 = streams.reduce((a, s) => a + (s.useRevenue ? 0 : s.monthlyVolume * 12), 0);
 
+    // per-stream series for analytics (product / discount-band analysis)
+    const streamDetail = streams.map((s) => {
+      const base = effMonthlyOf(s) * 12;
+      const annual = Array(N + 1).fill(0);
+      annual[1] = base;
+      for (let y = 2; y <= N; y++) annual[y] = annual[y - 1] * (1 + growth);
+      const monthly = [];
+      for (let y = 1; y <= N; y++) {
+        const row = [];
+        const scale = base > 0 ? annual[y] / base : 0;
+        for (let m = 0; m < 12; m++) row.push(base * (seasonal.w[m] / seasonal.sum) * scale);
+        monthly.push(row);
+      }
+      return { id:s.id, name:s.name, type:s.type, discountPct:s.discountPct, annual, monthly };
+    });
+
     // --- COGS ---
     const matPct = num(p.specialAssumptions.materialPct) / 100 || (g('cogsPct') / 100);
     const directLabour1 = num(p.specialAssumptions.directLabourAnnual);
     const directProd1 = num(p.specialAssumptions.directProductionAnnual);
     const otherDirect1 = num(p.specialAssumptions.otherDirectAnnual);
-    const flatDirectY = (y) => (directLabour1 + directProd1 + otherDirect1) * Math.pow(1 + inflation, y - 1);
+    // Fixed COGS = direct labour + direct production + other direct (inflation-adjusted);
+    // Variable COGS = material % of revenue. Together reconcile to total COGS.
+    const fixedCogsAnnual = Array(N + 1).fill(0);
+    const variableCogsAnnual = Array(N + 1).fill(0);
     const cogsAnnual = Array(N + 1).fill(0);
     const grossProfit = Array(N + 1).fill(0);
     const grossMargin = Array(N + 1).fill(0);
     for (let y = 1; y <= N; y++) {
-      cogsAnnual[y] = revenueAnnual[y] * matPct + flatDirectY(y);
+      fixedCogsAnnual[y] = (directLabour1 + directProd1 + otherDirect1) * Math.pow(1 + inflation, y - 1);
+      variableCogsAnnual[y] = revenueAnnual[y] * matPct;
+      cogsAnnual[y] = fixedCogsAnnual[y] + variableCogsAnnual[y];
       grossProfit[y] = revenueAnnual[y] - cogsAnnual[y];
       grossMargin[y] = revenueAnnual[y] > 0 ? grossProfit[y] / revenueAnnual[y] * 100 : 0;
     }
-    const variableCogsY1 = revenueAnnual[1] * matPct;
+    const variableCogsY1 = variableCogsAnnual[1];
 
     // --- OPEX ---
     const payroll = payrollProjection(p, N);
     const opexAnnual = Array(N + 1).fill(0);
-    const perCatAnnual = []; // {key,label,monthly,monthlyBase,annualBase,annual:[],fromPayroll?}
+    const variableOpexAnnual = Array(N + 1).fill(0);
+    const perCatAnnual = []; // {key,label,monthly,monthlyBase,annualBase,variable,annual:[],fromPayroll?}
     const OPEX_LABELS = Object.fromEntries(OPEX_CATS.map((k) => [k[0], k[1]]));
     const baseOf = (c) => (c.base !== undefined && c.base !== '' ? num(c.base) : 0);
     const monthlyOf = (c) => (c.monthlyBase !== undefined && c.monthlyBase !== '' ? num(c.monthlyBase) : baseOf(c));
@@ -426,6 +451,7 @@
       const c = raw || {};
       if (c.hidden) return;                                    // deleted (hidden) row → excluded from computation
       const monthly = c.monthly !== false;
+      const variable = c.variable === true;
       const label = (c.label && String(c.label).trim()) ? String(c.label).trim() : (OPEX_LABELS[key] || key);
       const growthSet = c.growth === undefined || c.growth === '' ? null : num(c.growth);
       // Derived contingency is computed separately below.
@@ -435,7 +461,7 @@
       if (key === 'salaries' && payroll.enabled) {
         const arr = Array(N + 1).fill(0);
         for (let y = 1; y <= N; y++) arr[y] = payroll.annual.total[y];
-        perCatAnnual.push({ key, label, monthly: true, monthlyBase: null, annualBase: null, annual: arr, fromPayroll: true, displayOnly: true });
+        perCatAnnual.push({ key, label, monthly: true, variable, monthlyBase: null, annualBase: null, annual: arr, fromPayroll: true, displayOnly: true });
         return;
       }
       const effGrowth = growthSet === null ? opexGrowth : growthSet / 100;
@@ -445,8 +471,8 @@
       const arr = Array(N + 1).fill(0);
       arr[1] = y1;
       for (let y = 2; y <= N; y++) arr[y] = arr[y - 1] * (1 + effGrowth);
-      for (let y = 1; y <= N; y++) opexAnnual[y] += arr[y];
-      perCatAnnual.push({ key, label, monthly, monthlyBase: monthly ? monthlyOf(c) : null, annualBase: monthly ? null : annualOf(c), annual: arr });
+      for (let y = 1; y <= N; y++) { opexAnnual[y] += arr[y]; if (variable) variableOpexAnnual[y] += arr[y]; }
+      perCatAnnual.push({ key, label, monthly, variable, monthlyBase: monthly ? monthlyOf(c) : null, annualBase: monthly ? null : annualOf(c), annual: arr });
     });
     // Authoritative payroll cost — counted exactly once (the salaries row above is display-only when enabled).
     if (payroll.enabled) {
@@ -454,7 +480,7 @@
       if (!perCatAnnual.some((c) => c.key === 'salaries')) {
         const arr = Array(N + 1).fill(0);
         for (let y = 1; y <= N; y++) arr[y] = payroll.annual.total[y];
-        perCatAnnual.push({ key: 'salaries', label: OPEX_LABELS.salaries || 'Gaji', monthly: true, monthlyBase: null, annualBase: null, annual: arr, fromPayroll: true, displayOnly: true });
+        perCatAnnual.push({ key: 'salaries', label: OPEX_LABELS.salaries || 'Gaji', monthly: true, variable:false, monthlyBase: null, annualBase: null, annual: arr, fromPayroll: true, displayOnly: true });
       }
     }
     // Contingency / miscellaneous — derived as % of all other OPEX (auto: central contingencyPct assumption).
@@ -578,21 +604,94 @@
       }
     }
 
-    // --- Cash flow ---
-    const cf = { operating:Array(N+1).fill(0), investing:Array(N+1).fill(0), financing:Array(N+1).fill(0),
-      net:Array(N+1).fill(0), opening:Array(N+1).fill(0), closing:Array(N+1).fill(0) };
+    // --- Cash flow (indirect method — interlocked with the balance sheet) ---
+    // Note: financing cost (interest / islamic profit) is NOT repeated here — it is already
+    // inside Net Income. Financing cash flows carry principal repayments + profit distributions only.
+    const cf = {
+      netIncome:Array(N+1).fill(0), dep:Array(N+1).fill(0),
+      dAr:Array(N+1).fill(0), dInv:Array(N+1).fill(0), dPrepaid:Array(N+1).fill(0),
+      dAp:Array(N+1).fill(0), dTax:Array(N+1).fill(0),
+      operating:Array(N+1).fill(0), investing:Array(N+1).fill(0), financing:Array(N+1).fill(0),
+      net:Array(N+1).fill(0), opening:Array(N+1).fill(0), closing:Array(N+1).fill(0),
+      capexOut:Array(N+1).fill(0), debtRepay:Array(N+1).fill(0), distributions:Array(N+1).fill(0),
+      cash0:0
+    };
+    const cash0 = equityRequired + injected0 - capexTotal - startupTotal - finFees0 - finDeposit0;
+    cf.cash0 = cash0;
     cf.investing[0] = -capexTotal;
     cf.financing[0] = injected0 - finFees0 - finDeposit0;
-    let opening = 0;
+    // Year-0 financing detail: debt issued + equity contributed (equityRequired covers any shortfall after debt)
+    cf.debtIssue0 = injected0;
+    cf.stockIssue0 = equityRequired;
+    // Fully reconciled Year-0 column for the statement presentation:
+    //   raising (debt + equity − fees/deposit) − investing (capex + startup costs) = cash0
+    cf.y0 = {
+      operating: 0, capex: -capexTotal, startup: -startupTotal,
+      debtIssue: injected0, stockIssue: equityRequired, fees: -(finFees0 + finDeposit0),
+      investing: -(capexTotal + startupTotal),
+      financing: injected0 + equityRequired - finFees0 - finDeposit0,
+      net: cash0, begin: 0, end: cash0
+    };
+    let opening = cash0;
+    let prevTax = 0;
     for (let y = 1; y <= N; y++) {
-      cf.operating[y] = pl.netProfit[y] + pl.dep[y] - (wcEnd[y] - (y === 1 ? initialWC : wcEnd[y - 1]));
-      cf.investing[y] = 0;
-      cf.financing[y] = -principalAnnual[y] - finCostAnnual[y] - distributionAnnual[y];
+      cf.netIncome[y] = pl.netProfit[y];
+      cf.dep[y] = pl.dep[y];
+      cf.dAr[y] = -(ar[y] - (y === 1 ? 0 : ar[y - 1]));
+      cf.dInv[y] = -(inv[y] - (y === 1 ? 0 : inv[y - 1]));
+      cf.dPrepaid[y] = 0;
+      cf.dAp[y] = ap[y] - (y === 1 ? 0 : ap[y - 1]);
+      cf.dTax[y] = pl.tax[y] - prevTax;
+      cf.capexOut[y] = -capexAnnual[y];
+      cf.debtRepay[y] = -principalAnnual[y];
+      cf.distributions[y] = -distributionAnnual[y];
+      cf.operating[y] = pl.netProfit[y] + pl.dep[y] + cf.dAr[y] + cf.dInv[y] + cf.dPrepaid[y] + cf.dAp[y] + cf.dTax[y];
+      cf.investing[y] = cf.capexOut[y];          // +0 proceeds from disposals/investments (none modelled)
+      cf.financing[y] = cf.debtRepay[y] + cf.distributions[y]; // +0 new debt/equity, dividends, treasury stock
       cf.net[y] = cf.operating[y] + cf.investing[y] + cf.financing[y];
       cf.opening[y] = opening;
       cf.closing[y] = opening + cf.net[y];
       opening = cf.closing[y];
+      prevTax = pl.tax[y];
     }
+
+    // --- Accounting statements (ACC): Income Statement, Balance Sheet, Cash Flow — interlocked ---
+    const cumDep = Array(N + 1).fill(0);
+    for (let y = 1; y <= N; y++) cumDep[y] = cumDep[y - 1] + (pl.dep[y] || 0);
+    const fixedOpexAnnual = Array(N + 1).fill(0);
+    for (let y = 1; y <= N; y++) fixedOpexAnnual[y] = opexAnnual[y] - variableOpexAnnual[y];
+    const bsCash = Array(N + 1).fill(0), bsDebt = Array(N + 1).fill(0), bsFixedGross = Array(N + 1).fill(0),
+      bsFixedNet = Array(N + 1).fill(0), bsRE = Array(N + 1).fill(0), bsAR = Array(N + 1).fill(0),
+      bsInv = Array(N + 1).fill(0), bsAP = Array(N + 1).fill(0), bsTax = Array(N + 1).fill(0),
+      bsPrepaid = Array(N + 1).fill(0);
+    bsCash[0] = cash0;
+    bsDebt[0] = injected0;
+    bsFixedGross[0] = capexTotal; bsFixedNet[0] = capexTotal;
+    bsRE[0] = -(startupTotal + finFees0 + finDeposit0);   // startup costs + loan fees/deposit expensed at start
+    // Year-end debt = drawn borrowing less cumulative principal repaid, so that the year-over-year
+    // change in the balance sheet matches the financing cash flows exactly (ΔDebt = −principal repaid).
+    let cumPrincipal = 0;
+    for (let y = 1; y <= N; y++) {
+      bsCash[y] = cf.closing[y];
+      cumPrincipal += principalAnnual[y] || 0;
+      bsDebt[y] = Math.max(0, injected0 - cumPrincipal);
+      bsFixedGross[y] = capexTotal;
+      bsFixedNet[y] = capexTotal - cumDep[y];
+      bsRE[y] = bsRE[y - 1] + pl.netProfit[y] - distributionAnnual[y];
+      bsAR[y] = ar[y]; bsInv[y] = inv[y]; bsAP[y] = ap[y]; bsTax[y] = pl.tax[y]; bsPrepaid[y] = 0;
+    }
+    const bs = {
+      cash:bsCash, ar:bsAR, inv:bsInv, prepaid:bsPrepaid, fixedGross:bsFixedGross, fixedNet:bsFixedNet,
+      debt:bsDebt, ap:bsAP, taxPayable:bsTax,
+      contributedCapital: equityRequired,
+      retainedEarnings: bsRE
+    };
+    const accIs = {
+      revenue: pl.revenue, variy: variableCogsAnnual, fixedCogs: fixedCogsAnnual, grossProfit,
+      variableOpex: variableOpexAnnual, fixedOpex: fixedOpexAnnual,
+      ebitda: pl.ebitda, dep: pl.dep, ebit: pl.ebit, interest: pl.financingCost, tax: pl.tax, netIncome: pl.netProfit
+    };
+    const acc = { is: accIs, bs, cf };
 
     // --- FCF (unlevered, for investment metrics) ---
     const fcf = Array(N + 1).fill(0);
@@ -697,9 +796,9 @@
       startup:{ items:startupItems, total:startupTotal },
       initial,
       equityRequired,
-      revenue:{ streams, annual:revenueAnnual, monthly:monthlyRevenue, year1:year1RevBase, totalUnitsY1, monthLabels:MONTHS },
+      revenue:{ streams, detail:streamDetail, annual:revenueAnnual, monthly:monthlyRevenue, year1:year1RevBase, totalUnitsY1, monthLabels:MONTHS },
       seasonal,
-      cogs:{ annual:cogsAnnual, variableY1:variableCogsY1, materialPct:matPct * 100 },
+      cogs:{ annual:cogsAnnual, variable:variableCogsAnnual, fixed:fixedCogsAnnual, variableY1:variableCogsY1, materialPct:matPct * 100 },
       opex:{ categories:perCatAnnual, annual:opexAnnual, y1:opexY1, contingencyAnnual, contingencyPct: contingencyPct * 100, employeeOnCost },
       payroll,
       payrollScenarios: payrollScenarios(p, N),
@@ -712,6 +811,7 @@
       },
       wc:{ ar, inv, ap, end:wcEnd, initialWC },
       pl, cf,
+      acc,
       fcf, pvSeries, pvSum,
       invest:{ totalInvestment, netReturn, sumFCF, discount, npv, irr:irrVal, irrSeries, roiTotal, roiAnnual, payback, breakeven, roiMethod:p.roiMethod || 'total' },
       ratios, alerts,
@@ -906,7 +1006,7 @@
     p.opex.categories.salaries = { monthly:true, base:6000, growth:3 };
     p.opex.categories.rent = { monthly:true, base:3000, growth:3 };
     p.opex.categories.utilities = { monthly:true, base:900, growth:3 };
-    p.opex.categories.marketing = { monthly:true, base:800, growth:0 };
+    p.opex.categories.marketing = { monthly:true, base:800, growth:0, variable:true };
     p.opex.categories.transport = { monthly:true, base:400, growth:3 };
     p.opex.categories.insurance = { monthly:false, base:2400, growth:3 };
     p.opex.categories.maintenance = { monthly:true, base:300, growth:3 };
@@ -932,7 +1032,7 @@
 
   /* ---------------- Exports ---------------- */
   global.Model = {
-    MONTHS, ASSUMPTION_DEFS, OPEX_CATS, CAPEX_CATS,
+    MONTHS, MONTHS_EN, ASSUMPTION_DEFS, OPEX_CATS, CAPEX_CATS,
     uid, num, blank, makeProject, ensure, defaultSettings, defaultAssumptions,
     setAuto, setManual, resetToAuto,
     amortSchedule, irr, depreciationSchedule, seasonalWeights,

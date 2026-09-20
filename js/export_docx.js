@@ -87,6 +87,54 @@
     cfRows[cfRows.length - 1].__bold = true;
     table(yearHeads, cfRows, true);
 
+    if (F.acc && F.acc.is && F.acc.bs && F.acc.cf) {
+      const Is = F.acc.is, Bs = F.acc.bs, Cf2 = F.acc.cf;
+      H1(t('reports.acc'));
+      H2(t('acc.tab_is'));
+      const accIsRows = [moneyRow(t('acc.is_revenue'), Is.revenue), moneyRow('(−) ' + t('acc.is_var_cogs'), Is.variy), moneyRow('(−) ' + t('acc.is_fixed_cogs'), Is.fixedCogs),
+        moneyRow(t('acc.is_gross_profit'), Is.grossProfit), moneyRow('(−) ' + t('acc.is_var_overhead'), Is.variableOpex), moneyRow('(−) ' + t('acc.is_fixed_overhead'), Is.fixedOpex),
+        moneyRow(t('acc.is_ebitda'), Is.ebitda), moneyRow('(−) ' + t('acc.is_da'), Is.dep), moneyRow(t('acc.is_ebit'), Is.ebit),
+        moneyRow('(−) ' + t('pl.financing_cost'), Is.interest), moneyRow(t('pl.pbt'), F.pl.pbt), moneyRow('(−) ' + t('acc.is_tax'), Is.tax),
+        moneyRow(t('acc.is_net_income'), Is.netIncome)];
+      accIsRows[accIsRows.length - 1].__bold = true;
+      table(yearHeads, accIsRows, true);
+
+      H2(t('acc.tab_bs') + ' — ' + t('year') + ' ' + N);
+      const totalCurA = Bs.cash[N] + Bs.ar[N] + Bs.inv[N] + (Bs.prepaid[N] || 0);
+      const fixedNetA = Bs.fixedNet[N] || 0;
+      const totA = totalCurA + fixedNetA;
+      const totCL = Bs.ap[N] + (Bs.taxPayable[N] || 0);
+      const totL = totCL + (Bs.debt[N] || 0);
+      const totE = Bs.contributedCapital + Bs.retainedEarnings[N];
+      const bsAccRows = [
+        [t('acc.bs_cash'), RM(Bs.cash[N])], [t('acc.bs_ar'), RM(Bs.ar[N])], [t('acc.bs_inventory'), RM(Bs.inv[N])], [t('acc.bs_prepaid'), RM(Bs.prepaid[N] || 0)],
+        [t('acc.bs_total_current'), RM(totalCurA)], [t('acc.bs_fixed_assets'), RM(fixedNetA)], [t('acc.bs_total_assets'), RM(totA)],
+        [t('acc.bs_ap'), RM(Bs.ap[N])], [t('acc.bs_tax_payable'), RM(Bs.taxPayable[N] || 0)], [t('acc.bs_total_current_liab'), RM(totCL)],
+        [t('acc.bs_lt_debt'), RM(Bs.debt[N] || 0)], [t('acc.bs_total_liab'), RM(totL)],
+        [t('acc.bs_contributed'), RM(Bs.contributedCapital)], [t('acc.bs_re'), RM(Bs.retainedEarnings[N])], [t('acc.bs_total_equity'), RM(totE)],
+        [t('acc.bs_tlse'), RM(totL + totE)]
+      ];
+      table([t('acc.tab_bs'), t('year') + ' ' + N], bsAccRows, true);
+
+      H2(t('acc.tab_cf'));
+      const accCfRows = [moneyRow(t('acc.cf_net_income'), Cf2.netIncome), moneyRow(t('acc.cf_da'), Cf2.dep), moneyRow(t('acc.cf_d_ar'), Cf2.dAr),
+        moneyRow(t('acc.cf_d_inv'), Cf2.dInv), moneyRow(t('acc.cf_d_ap'), Cf2.dAp), moneyRow(t('acc.cf_d_tax'), Cf2.dTax), moneyRow(t('acc.cf_net_operating'), Cf2.operating),
+        moneyRow(t('acc.cf_capex'), Cf2.capexOut), moneyRow(t('acc.cf_net_investing'), Cf2.investing),
+        moneyRow(t('acc.cf_debt_pay'), Cf2.debtRepay), moneyRow(t('acc.cf_net_financing'), Cf2.financing),
+        moneyRow(t('acc.cf_end_cash'), Cf2.closing)];
+      accCfRows[accCfRows.length - 1].__bold = true;
+      table(yearHeads, accCfRows, true);
+    }
+
+    if (F.revenue.detail && F.revenue.detail.length) {
+      H2(t('reports.analytics'));
+      const contribRatio = 1 - ((F.cogs.materialPct || 0) / 100);
+      const bandLabels = ['0%', '1–10%', '11–25%', '26%+'];
+      const bandOf = (d) => (d == null || d <= 0) ? 0 : (d <= 10 ? 1 : (d <= 25 ? 2 : 3));
+      const aRows = F.revenue.detail.map((s) => [s.name, bandLabels[bandOf(s.discountPct)], RM(s.annual[1]), RM(s.annual[N]), RM((s.annual[N] || 0) * contribRatio)]);
+      table([t('analytics.product'), t('analytics.band'), t('analytics.revenue') + ' Y1', t('analytics.revenue') + ' Y' + N, t('analytics.profit') + ' Y' + N], aRows, true);
+    }
+
     H1(t('nav.analysis'));
     table([t('analysis.title') || t('nav.analysis'), ''], [
       [t('analysis.be_units'), F.invest.breakeven.beUnits == null ? t('not_calculable') : String(Math.round(F.invest.breakeven.beUnits))],

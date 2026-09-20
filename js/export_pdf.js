@@ -157,6 +157,87 @@
       moneyTable(yearHeads, rows);
     }
 
+    if (include('acc')) {
+      const A = F.acc, Is = A.is, Bs = A.bs, Cf = A.cf;
+      // Income Statement
+      title(t('reports.acc') + ' — ' + t('acc.tab_is'));
+      const isRows = [
+        buildRow(t('acc.is_revenue'), Is.revenue),
+        buildRow('(−) ' + t('acc.is_var_cogs'), Is.variy),
+        buildRow('(−) ' + t('acc.is_fixed_cogs'), Is.fixedCogs),
+        buildRow(t('acc.is_gross_profit'), Is.grossProfit),
+        buildRow('(−) ' + t('acc.is_var_overhead'), Is.variableOpex),
+        buildRow('(−) ' + t('acc.is_fixed_overhead'), Is.fixedOpex),
+        buildRow(t('acc.is_ebitda'), Is.ebitda),
+        buildRow('(−) ' + t('acc.is_da'), Is.dep),
+        buildRow(t('acc.is_ebit'), Is.ebit),
+        buildRow('(−) ' + t('pl.financing_cost'), Is.interest),
+        buildRow(t('pl.pbt'), F.pl.pbt),
+        buildRow('(−) ' + t('acc.is_tax'), Is.tax),
+        buildRow(t('acc.is_net_income'), Is.netIncome)
+      ];
+      isRows[isRows.length - 1].__line = true;
+      moneyTable(yearHeads, isRows);
+
+      // Balance Sheet (snapshot at final year)
+      title(t('acc.tab_bs'), t('year') + ' ' + N);
+      const yN = N;
+      const totalCur = Bs.cash[yN] + Bs.ar[yN] + Bs.inv[yN] + (Bs.prepaid[yN] || 0);
+      const fixedNet = Bs.fixedNet[yN] || 0;
+      const totalAssets = totalCur + fixedNet;
+      const totCurLiab = Bs.ap[yN] + (Bs.taxPayable[yN] || 0);
+      const totLiab = totCurLiab + (Bs.debt[yN] || 0);
+      const totEq = Bs.contributedCapital + Bs.retainedEarnings[yN];
+      const bsRows = [
+        ([t('acc.bs_cash'), Bs.cash[yN]]),
+        ([t('acc.bs_ar'), Bs.ar[yN]]),
+        ([t('acc.bs_inventory'), Bs.inv[yN]]),
+        ([t('acc.bs_prepaid'), Bs.prepaid[yN] || 0]),
+        ([t('acc.bs_total_current'), totalCur]),
+        ([t('acc.bs_fixed_assets'), fixedNet]),
+        ([t('acc.bs_total_assets'), totalAssets]),
+        ([t('acc.bs_ap'), Bs.ap[yN]]),
+        ([t('acc.bs_tax_payable'), Bs.taxPayable[yN] || 0]),
+        ([t('acc.bs_total_current_liab'), totCurLiab]),
+        ([t('acc.bs_lt_debt'), Bs.debt[yN] || 0]),
+        ([t('acc.bs_total_liab'), totLiab]),
+        ([t('acc.bs_contributed'), Bs.contributedCapital]),
+        ([t('acc.bs_re'), Bs.retainedEarnings[yN]]),
+        ([t('acc.bs_total_equity'), totEq]),
+        ([t('acc.bs_tlse'), totLiab + totEq])
+      ];
+      moneyTable(['', t('year') + ' ' + N], bsRows.map((r) => [r[0], Math.round(r[1])]));
+      para(t('acc.bs_balance_ok') + (Math.abs(totalAssets - (totLiab + totEq)) < 1 ? ' ✓' : ' ✗'), { bold: true, size: 8.5 });
+
+      // Cash Flow Statement (indirect)
+      title(t('acc.tab_cf'));
+      const cfRows = [
+        buildRow(t('acc.cf_net_income'), Cf.netIncome),
+        buildRow(t('acc.cf_da'), Cf.dep),
+        buildRow(t('acc.cf_d_ar'), Cf.dAr),
+        buildRow(t('acc.cf_d_inv'), Cf.dInv),
+        buildRow(t('acc.cf_d_ap'), Cf.dAp),
+        buildRow(t('acc.cf_d_tax'), Cf.dTax),
+        buildRow(t('acc.cf_net_operating'), Cf.operating),
+        buildRow(t('acc.cf_capex'), Cf.capexOut),
+        buildRow(t('acc.cf_net_investing'), Cf.investing),
+        buildRow(t('acc.cf_debt_pay'), Cf.debtRepay),
+        buildRow(t('acc.cf_net_financing'), Cf.financing),
+        buildRow(t('acc.cf_end_cash'), Cf.closing)
+      ];
+      cfRows[cfRows.length - 1].__line = true;
+      moneyTable(yearHeads, cfRows);
+    }
+
+    if (include('analytics') && F.revenue.detail && F.revenue.detail.length) {
+      title(t('reports.analytics'));
+      const contribRatio = 1 - ((F.cogs.materialPct || 0) / 100);
+      const bandLabels = ['0%', '1–10%', '11–25%', '26%+'];
+      const bandOf = (d) => (d == null || d <= 0) ? 0 : (d <= 10 ? 1 : (d <= 25 ? 2 : 3));
+      const aRows = F.revenue.detail.map((s) => [s.name, bandLabels[bandOf(s.discountPct)], RM(s.annual[1]), RM(s.annual[N])]);
+      moneyTable([t('analytics.product'), t('analytics.band'), t('analytics.revenue') + ' Y1', t('analytics.revenue') + ' Y' + N], aRows);
+    }
+
     if (include('financing')) {
       title(t('reports.financing'));
       if (p.financialMode === 'SYARIAH') {

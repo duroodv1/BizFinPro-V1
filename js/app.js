@@ -126,7 +126,7 @@
       it[field] = value; markDirty(); scheduleSave();
       (instant ? refreshNow : refreshSoon)(rememberFocusPath());
     },
-    addStream() { S.proj.revenue.streams.push({ id: M.uid(), name: '', type: 'product', monthlyVolume: '', unitPrice: '', monthlyRevenue: '', useRevenue: false, growth: '' }); markDirty(); scheduleSave(); refreshNow(); },
+    addStream() { S.proj.revenue.streams.push({ id: M.uid(), name: '', type: 'product', monthlyVolume: '', unitPrice: '', monthlyRevenue: '', useRevenue: false, discountPct: '', growth: '' }); markDirty(); scheduleSave(); refreshNow(); },
     delStream(id) { S.proj.revenue.streams = S.proj.revenue.streams.filter((i) => i.id !== id); markDirty(); scheduleSave(); refreshNow(); },
     setStream(id, field, value, instant) {
       const it = S.proj.revenue.streams.find((i) => i.id === id); if (!it) return;
@@ -210,6 +210,8 @@
       { id: 'pl', icon: 'financials', label: t('nav.pl'), group: t('nav.financials') },
       { id: 'cashflow', icon: 'cash', label: t('nav.cashflow'), group: t('nav.financials') },
       { id: 'wc', icon: 'financials', label: t('nav.working_capital'), group: t('nav.financials') },
+      { id: 'acc', icon: 'financials', label: t('nav.acc'), group: t('nav.financials') },
+      { id: 'analytics', icon: 'chart', label: t('nav.analytics'), group: t('nav.analysis') },
       { id: 'breakeven', icon: 'analysis', label: t('nav.breakeven'), group: t('nav.analysis') },
       { id: 'roi', icon: 'analysis', label: t('nav.roi'), group: t('nav.analysis') },
       { id: 'npv', icon: 'analysis', label: t('nav.npv'), group: t('nav.analysis') },
@@ -280,6 +282,7 @@
       home: t('nav.home'), projects: t('nav.projects'), business: t('nav.business'), budget: t('nav.budget'),
       capex: t('nav.capex'), revenue: t('nav.revenue'), cogs: t('nav.cogs'), opex: t('nav.expenses'),
       pl: t('nav.pl'), cashflow: t('nav.cashflow'), wc: t('nav.working_capital'),
+      acc: t('nav.acc'), analytics: t('nav.analytics'),
       breakeven: t('nav.breakeven'), roi: t('nav.roi'), npv: t('nav.npv'), irr: t('nav.irr'), payback: t('nav.payback'),
       ratios: t('nav.ratios'), scenarios: t('nav.scenarios'), sensitivity: t('nav.sensitivity'),
       financing: S.proj && S.proj.financialMode === 'SYARIAH' ? t('nav.islamic') : t('nav.conventional'),
@@ -301,6 +304,8 @@
     else if (S.page === 'pl') renderPl(el);
     else if (S.page === 'cashflow') renderCashflow(el);
     else if (S.page === 'wc') renderWc(el);
+    else if (S.page === 'acc') renderAcc(el);
+    else if (S.page === 'analytics') renderAnalytics(el);
     else if (S.page === 'breakeven') renderBreakEven(el);
     else if (S.page === 'roi') renderRoi(el);
     else if (S.page === 'npv') renderNpv(el);
@@ -735,7 +740,7 @@
     const F = finance();
     const years = []; for (let y = 1; y <= F.N; y++) years.push('Y' + y);
     const streams = p.revenue.streams.map((s, idx) => {
-      const amt = s.useRevenue ? Number(s.monthlyRevenue) * 12 : Number(s.monthlyVolume) * Number(s.unitPrice) * 12;
+      const amt = (s.useRevenue ? Number(s.monthlyRevenue) * 12 : Number(s.monthlyVolume) * Number(s.unitPrice) * 12) * (1 - (Number(s.discountPct) || 0) / 100);
       return '<tr>' +
         '<td><input type="text" data-sr-name="' + s.id + '" value="' + es(s.name) + '" style="min-width:130px"></td>' +
         '<td><select data-sr-type="' + s.id + '"><option value="product"' + (s.type !== 'service' ? ' selected' : '') + '>' + t('revenue.product') + '</option><option value="service"' + (s.type === 'service' ? ' selected' : '') + '>' + t('revenue.service') + '</option></select></td>' +
@@ -744,6 +749,7 @@
           ? '<td><input type="number" step="any" data-sr-mr="' + s.id + '" value="' + es(s.monthlyRevenue) + '" placeholder="' + t('revenue.monthly_sales') + '" style="min-width:110px"></td><td></td>'
           : '<td><input type="number" step="any" data-sr-mv="' + s.id + '" value="' + es(s.monthlyVolume) + '" placeholder="' + (s.type === 'service' ? t('revenue.qty') : t('revenue.monthly_volume')) + '" style="min-width:110px"></td><td><input type="number" step="any" data-sr-up="' + s.id + '" value="' + es(s.unitPrice) + '" placeholder="' + t('revenue.unit_price') + '" style="min-width:110px"></td>') +
         '<td class="r"><b class="num">' + money(amt) + '</b></td>' +
+        '<td><input type="number" step="any" min="0" max="100" data-sr-d="' + s.id + '" value="' + es(s.discountPct) + '" placeholder="0%" style="max-width:70px"></td>' +
         '<td><input type="number" step="any" data-sr-g="' + s.id + '" value="' + es(s.growth) + '" placeholder="%" style="max-width:70px"></td>' +
         '<td><button class="icon-btn" data-sr-del="' + s.id + '" style="color:var(--rose)">🗑</button></td>' +
         '</tr>';
@@ -751,7 +757,7 @@
 
     el.innerHTML =
       '<div class="card"><div class="card-title"><h3>' + es(t('revenue.title')) + '</h3><button class="btn sm primary" id="add-sr">＋ ' + es(t('revenue.add_stream')) + '</button></div>' +
-      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('revenue.stream_name') + '</th><th>' + t('revenue.type') + '</th><th>' + t('revenue.mode_select') + '</th><th>' + t('revenue.qty') + ' / ' + t('revenue.monthly_sales') + '</th><th>' + t('revenue.unit_price') + '</th><th class="r">' + t('revenue.annual_sales') + '</th><th>' + t('revenue.growth') + ' %</th><th></th></tr></thead><tbody>' + (streams || '') + '</tbody></table></div>' +
+      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('revenue.stream_name') + '</th><th>' + t('revenue.type') + '</th><th>' + t('revenue.mode_select') + '</th><th>' + t('revenue.qty') + ' / ' + t('revenue.monthly_sales') + '</th><th>' + t('revenue.unit_price') + '</th><th class="r">' + t('revenue.annual_sales') + '</th><th>' + t('analytics.band') + ' %</th><th>' + t('revenue.growth') + ' %</th><th></th></tr></thead><tbody>' + (streams || '') + '</tbody></table></div>' +
       '<div style="display:flex;justify-content:flex-end;gap:24px;margin-top:14px"><div style="text-align:right"><div class="tiny">' + es(t('revenue.year1_annual')) + '</div><div style="font-size:22px;font-weight:800" class="num">' + money(F.revenue.year1) + '</div></div></div>' +
       '</div>' +
       '<div class="card section-bump"><div class="card-title"><h3>📈 ' + es(t('revenue.yearly_title')) + '</h3></div><div class="chart-box" id="ch-rev-page"></div><div class="legend" id="lg-rev-page"></div>' +
@@ -780,6 +786,7 @@
     el.querySelectorAll('[data-sr-mv]').forEach((i) => i.addEventListener('input', () => BizSet.setStream(i.getAttribute('data-sr-mv'), 'monthlyVolume', i.value, true)));
     el.querySelectorAll('[data-sr-up]').forEach((i) => i.addEventListener('input', () => BizSet.setStream(i.getAttribute('data-sr-up'), 'unitPrice', i.value, true)));
     el.querySelectorAll('[data-sr-mr]').forEach((i) => i.addEventListener('input', () => BizSet.setStream(i.getAttribute('data-sr-mr'), 'monthlyRevenue', i.value, true)));
+    el.querySelectorAll('[data-sr-d]').forEach((i) => i.addEventListener('input', () => BizSet.setStream(i.getAttribute('data-sr-d'), 'discountPct', i.value, true)));
     el.querySelectorAll('[data-sr-g]').forEach((i) => i.addEventListener('input', () => BizSet.setStream(i.getAttribute('data-sr-g'), 'growth', i.value)));
     el.querySelectorAll('[data-sr-del]').forEach((b) => b.addEventListener('click', () => BizSet.delStream(b.getAttribute('data-sr-del'))));
     bindInputs(el);
@@ -866,6 +873,7 @@
           : t('expenses.from_payroll');
         return '<tr class="derived">' +
           '<td>' + nameCell + '<div class="tiny">' + es(note) + '</div></td>' +
+          '<td><span class="num muted">—</span></td>' +
           '<td>' + (key === 'contingency' ? t('expenses.annual') : t('expenses.monthly')) + '</td>' +
           '<td class="r"><span class="num muted">' + money(fc.annual[1] / 12) + '</span></td>' +
           '<td class="r"><span class="num muted">' + money(fc.annual[1]) + '</span></td>' +
@@ -878,8 +886,15 @@
       const monthlyVal = monthly ? baseVal : (Number(baseVal || 0) / 12);
       const annualVal = monthly ? (Number(baseVal || 0) * 12) : baseVal;
       const y1 = monthly ? Number(baseVal || 0) * 12 : Number(baseVal || 0);
+      const isVariable = c.variable === true;
+      const typeToggle = derived ? '' :
+        '<div class="seg">' +
+          '<button data-okt-var="' + key + '" class="' + (isVariable ? 'on' : '') + '">' + t('expenses.variable') + '</button>' +
+          '<button data-okt-fix="' + key + '" class="' + (isVariable ? '' : 'on') + '">' + t('expenses.fixed') + '</button>' +
+        '</div>';
       return '<tr>' +
         '<td>' + nameCell + '</td>' +
+        '<td>' + typeToggle + '</td>' +
         '<td>' + freqToggle + '</td>' +
         '<td>' + (monthly
           ? '<input type="number" step="any" min="0" data-okb="' + key + '" value="' + es(baseVal) + '" style="max-width:110px;text-align:right">'
@@ -894,7 +909,7 @@
         '</tr>';
     }).join('');
 
-    const totalRow = '<tr class="total"><td><b>' + t('total') + ' OPEX</b></td><td></td><td></td><td></td><td></td><td class="r"><b class="num">' + money(F.opex.y1) + '</b></td><td class="r num"><b>' + money(F.opex.annual[F.N]) + '</b></td><td></td></tr>';
+    const totalRow = '<tr class="total"><td><b>' + t('total') + ' OPEX</b></td><td></td><td></td><td></td><td></td><td></td><td class="r"><b class="num">' + money(F.opex.y1) + '</b></td><td class="r num"><b>' + money(F.opex.annual[F.N]) + '</b></td><td></td></tr>';
 
     el.innerHTML =
       '<div class="card"><div class="card-title"><h3>' + es(t('expenses.title')) + '</h3>' +
@@ -902,7 +917,7 @@
         '<button class="btn sm primary" id="add-opex">＋ ' + t('common.add') + '</button>' +
         '<span class="hint">' + es(t('expenses.growth_blank_note')) + ': ' + pct(F.assumptions.opexGrowth * 100, 0) + '</span>' +
       '</div></div>' +
-      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('expenses.title') + '</th><th>' + t('expenses.periodic') + '</th><th class="r">' + t('expenses.monthly') + ' (RM)</th><th class="r">' + t('expenses.annual') + ' (RM)</th><th class="r">' + t('expenses.growth') + ' %</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th><th></th></tr></thead><tbody>' + catRows + totalRow + '</tbody></table></div>' +
+      '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('expenses.title') + '</th><th>' + t('expenses.type') + '</th><th>' + t('expenses.periodic') + '</th><th class="r">' + t('expenses.monthly') + ' (RM)</th><th class="r">' + t('expenses.annual') + ' (RM)</th><th class="r">' + t('expenses.growth') + ' %</th><th class="r">Y1</th><th class="r">Y' + F.N + '</th><th></th></tr></thead><tbody>' + catRows + totalRow + '</tbody></table></div>' +
       (restoreChips ? '<div style="margin-top:10px" class="tiny">' + es(t('common.restore_note')) + ': <span style="display:inline-flex;gap:6px;flex-wrap:wrap;vertical-align:middle">' + restoreChips + '</span></div>' : '') +
       '<div style="margin-top:12px"><button class="btn ghost" id="btn-torch-opex">💡 ' + es(t('expenses.torch')) + '</button></div></div>' +
       payrollCard() +
@@ -915,6 +930,8 @@
     el.querySelectorAll('[id^="restore-opex-"]').forEach((b) => b.addEventListener('click', () => BizSet.restoreOpexItem(b.id.replace('restore-opex-', ''))));
     el.querySelectorAll('[data-okm-month]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okm-month'), 'monthly', true, true)));
     el.querySelectorAll('[data-okm-annual]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okm-annual'), 'monthly', false, true)));
+    el.querySelectorAll('[data-okt-var]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okt-var'), 'variable', true, true)));
+    el.querySelectorAll('[data-okt-fix]').forEach((b) => b.addEventListener('click', () => BizSet.setOpex(b.getAttribute('data-okt-fix'), 'variable', false, true)));
     el.querySelectorAll('[data-okn]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okn'), 'label', i.value, true)));
     el.querySelectorAll('[data-okb]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okb'), 'base', i.value, true)));
     el.querySelectorAll('[data-okg]').forEach((i) => i.addEventListener('input', () => BizSet.setOpex(i.getAttribute('data-okg'), 'growth', i.value)));
@@ -1053,8 +1070,306 @@
   }
 
   /* ============================================================
-     WORKING CAPITAL
+     ACC — Accounting Statements (Income / Balance Sheet / Cash Flow)
      ============================================================ */
+  function renderAcc(el) {
+    const p = S.proj;
+    const F = finance();
+    const acc = F.acc || {};
+    const A = acc.is || {}, B = acc.bs || {}, C = acc.cf || {};
+    if (!acc.is || !acc.bs || !acc.cf) { el.innerHTML = UI.emptyState('🧾', t('common.select_project')); return; }
+    const N = F.N;
+    const years = []; for (let y = 1; y <= N; y++) years.push('Y' + y);
+    const curTab = S._accTab || 'is';
+    S._accTab = curTab;
+    const tabBtn = (id, label, ico) => '<button class="btn ' + (curTab === id ? 'primary' : 'ghost') + '" data-acc-tab="' + id + '">' + ico + ' ' + es(label) + '</button>';
+
+    // financial-statement row builder (helper) — years columns
+    const row = (label, arr, cls) => ({
+      cls: cls || '', cells: [{ html: label }].concat(Array.from({ length: N }, (_, i) => ({ r: true, html: money(arr[i + 1]) })))
+    });
+    const head = [{ label: '' }].concat(Array.from({ length: N }, (_, i) => ({ label: years[i], r: true })));
+
+    /* ---- Income Statement ---- */
+    const isRows = [
+      row(t('acc.is_revenue'), A.revenue),
+      row('(−) ' + t('acc.is_var_cogs'), A.variy),
+      row('(−) ' + t('acc.is_fixed_cogs'), A.fixedCogs),
+      row(t('acc.is_gross_profit'), A.grossProfit, 'subtotal'),
+      row('(−) ' + t('acc.is_var_overhead'), A.variableOpex),
+      row('(−) ' + t('acc.is_fixed_overhead'), A.fixedOpex),
+      row(t('acc.is_ebitda'), A.ebitda, 'subtotal'),
+      row('(−) ' + t('acc.is_da'), A.dep),
+      row(t('acc.is_ebit'), A.ebit, 'subtotal'),
+      row('(−) ' + t('pl.financing_cost'), A.interest),
+      row(t('pl.pbt'), F.pl.pbt),
+      row('(−) ' + t('acc.is_tax'), A.tax),
+      row(t('acc.is_net_income'), A.netIncome, 'total')
+    ];
+    const flank = '<div class="two-col section-bump" style="gap:14px">' +
+      '<div class="card tight" style="flex:1"><div class="card-title"><h3>📘 ' + es(t('acc.flow_ni_re')) + '</h3></div><div class="tiny" style="line-height:1.7">' + es(t('acc.recap')) + '</div></div>' +
+      '<div class="card tight" style="flex:1"><div class="card-title"><h3>🔗 ' + es(t('analysis.result')) + '</h3></div>' +
+        UI.kv(t('acc.flow_ni_cf'), '<b class="num">' + money(A.netIncome[1]) + ' → ' + money(C.operating[1]) + '</b>') +
+        UI.kv(t('acc.flow_fa_cf'), '<b class="num">' + money((B.fixedNet[1] || 0) - (B.fixedNet[0] || 0)) + ' → ' + money(C.investing[1]) + '</b>') +
+        UI.kv(t('acc.flow_debt_cf'), '<b class="num">' + money(C.financing[1]) + '</b>') +
+        UI.kv(t('acc.flow_cash_bs'), '<b class="num">' + money(C.closing[N]) + ' = ' + money(B.cash[N]) + '</b>') +
+      '</div></div>';
+
+    /* ---- Balance Sheet ---- */
+    let bsYear = Number(S._accBsYear || N);
+    if (!(bsYear >= 1 && bsYear <= N)) bsYear = N;
+    S._accBsYear = bsYear;
+    const y = bsYear;
+    const oc = 0; // other current assets — none modelled
+    const totalCur = B.cash[y] + B.ar[y] + B.inv[y] + (B.prepaid[y] || 0) + oc;
+    const totalLiabCur = (B.ap[y]) + (B.taxPayable[y] || 0);
+    const totalLiab = totalLiabCur + (B.debt[y]);
+    const totalEq = B.contributedCapital + B.retainedEarnings[y];
+    const tlse = totalLiab + totalEq;
+    const totalAssets = totalCur + (B.fixedNet[y] || 0);
+    const bsRow = (label, v, cls) => '<tr class="' + (cls || '') + '"><td>' + es(label) + '</td><td class="r"><span class="num">' + money(v) + '</span></td></tr>';
+    const bsSheet =
+      '<div class="grid" style="grid-template-columns:1fr 1fr;gap:14px">' +
+        '<div class="card tight"><div class="card-title"><h3>🏦 ' + es(t('acc.bs_assets')) + '</h3><span class="hint">' + t('year') + ' ' + y + '</span></div><table class="data">' +
+          bsRow(t('acc.bs_cash'), B.cash[y]) +
+          bsRow(t('acc.bs_ar'), B.ar[y]) +
+          bsRow(t('acc.bs_inventory'), B.inv[y]) +
+          bsRow(t('acc.bs_prepaid'), B.prepaid[y] || 0) +
+          bsRow(t('acc.bs_other_current'), oc) +
+          bsRow(t('acc.bs_total_current'), totalCur, 'subtotal') +
+          bsRow(t('acc.bs_fixed_assets'), B.fixedNet[y], 'subtotal') +
+          bsRow(t('acc.bs_total_assets'), totalAssets, 'total') +
+        '</table></div>' +
+        '<div class="card tight"><div class="card-title"><h3>⚖️ ' + es(t('acc.bs_liab')) + ' + ' + es(t('acc.bs_equity')) + '</h3></div><table class="data">' +
+          bsRow(t('acc.bs_ap'), B.ap[y]) +
+          bsRow(t('acc.bs_tax_payable'), B.taxPayable[y] || 0) +
+          bsRow(t('acc.bs_total_current_liab'), totalLiabCur, 'subtotal') +
+          bsRow(t('acc.bs_lt_debt'), B.debt[y], 'subtotal') +
+          bsRow(t('acc.bs_total_liab'), totalLiab, 'total') +
+          bsRow(t('acc.bs_contributed'), B.contributedCapital) +
+          bsRow(t('acc.bs_re'), B.retainedEarnings[y]) +
+          bsRow(t('acc.bs_total_equity'), totalEq, 'subtotal') +
+          bsRow(t('acc.bs_tlse'), tlse, 'total') +
+        '</table></div>' +
+      '</div>';
+    const balanced = Math.abs(totalAssets - tlse) < 1;
+    const bsYearSelect = UI.selectInput(years.map((lbl, i) => ({ value: String(i + 1), label: t('year') + ' ' + (i + 1) })), String(bsYear), { id: 'acc-bs-year' });
+    const bsBlock =
+      '<div class="card section-bump"><div class="card-title"><h3>📒 ' + es(t('acc.bs')) + '</h3>' + bsYearSelect + '</div>' + bsSheet +
+      '<div style="margin-top:12px">' + UI.alert(balanced ? 'ok' : 'bad', balanced ? es(t('acc.bs_balance_ok')) : es(t('acc.bs_balance_bad'))) + '</div>' +
+      '<div class="tiny" style="margin-top:10px">' + es(t('acc.bs_closing_cash_note')) + '</div></div>';
+
+    /* ---- Cash Flow Statement ---- */
+    const y0lbl = t('year') + ' 0';
+    const cfHead = [{ label: '' }].concat([{ label: y0lbl, r: true }]).concat(Array.from({ length: N }, (_, i) => ({ label: years[i], r: true })));
+    const cfCell0 = (v) => ({ r: true, html: money(v == null ? 0 : v) });
+    const cfRow = (label, y0, arr, cls) => ({
+      cls: cls || '',
+      cells: [{ html: label }, cfCell0(y0 == null ? null : y0)].concat(Array.from({ length: N }, (_, i) => ({ r: true, html: money(arr[i + 1]) })))
+    });
+    const secHead = (label) => ({ cls: 'sec', cells: [{ html: '<b>' + es(label) + '</b>' }].concat(Array(N + 1).fill({ r: true, html: '' })) });
+    const y0 = C.y0 || { operating: 0, capex: 0, startup: 0, debtIssue: 0, stockIssue: 0, fees: 0, investing: 0, financing: 0, net: 0, begin: 0, end: 0 };
+    const cfRows = [
+      secHead(t('acc.cf_operating_activities')),
+      cfRow(t('acc.cf_net_income'), 0, C.netIncome),
+      cfRow(t('acc.cf_da'), 0, C.dep),
+      cfRow(t('acc.cf_d_ar'), 0, C.dAr),
+      cfRow(t('acc.cf_d_inv'), 0, C.dInv),
+      cfRow(t('acc.cf_d_prepaid'), 0, C.dPrepaid),
+      cfRow(t('acc.cf_d_ap'), 0, C.dAp),
+      cfRow(t('acc.cf_d_tax'), 0, C.dTax),
+      cfRow(t('acc.cf_net_operating'), 0, C.operating, 'total'),
+      secHead(t('acc.cf_investing')),
+      cfRow(t('acc.cf_capex'), y0.capex, C.capexOut),
+      cfRow(t('acc.cf_proceeds_equip'), 0, Array(N + 1).fill(0)),
+      cfRow(t('acc.cf_proceeds_inv'), 0, Array(N + 1).fill(0)),
+      { cls: '', cells: [{ html: t('investment.startup') }].concat([cfCell0(y0.startup)]).concat(Array(N + 1).fill({ r: true, html: money(0) })) },
+      cfRow(t('acc.cf_net_investing'), y0.investing, C.investing, 'total'),
+      secHead(t('acc.cf_financing')),
+      cfRow(t('acc.cf_debt_pay'), 0, C.debtRepay),
+      cfRow(t('acc.cf_debt_issue'), y0.debtIssue, Array(N + 1).fill(0)),
+      cfRow(t('acc.cf_stock_issue'), y0.stockIssue, Array(N + 1).fill(0)),
+      { cls: '', cells: [{ html: t('financing.fees') }].concat([cfCell0(y0.fees)]).concat(Array(N + 1).fill({ r: true, html: money(0) })) },
+      cfRow(t('acc.cf_dividends'), 0, Array(N + 1).fill(0)),
+      cfRow(t('acc.cf_treasury'), 0, Array(N + 1).fill(0)),
+      cfRow(t('acc.cf_net_financing'), y0.financing, C.financing, 'total'),
+      cfRow(t('acc.cf_begin_cash'), y0.begin, C.opening, ''),
+      cfRow(t('acc.cf_end_cash'), y0.end, C.closing, 'total')
+    ];
+    const cfBlock =
+      '<div class="card section-bump"><div class="card-title"><h3>💵 ' + es(t('acc.cf_title')) + '</h3></div>' +
+      '<div class="tbl-wrap">' + '<table class="data"><thead><tr>' + cfHead.map((h) => '<th class="' + (h.r ? 'r' : '') + '">' + es(h.label) + '</th>').join('') + '</tr></thead><tbody>' +
+      cfRows.map((r) => '<tr class="' + (r.cls || '') + '">' + r.cells.map((c) => '<td class="' + (c.r ? 'r' : '') + '">' + c.html + '</td>').join('') + '</tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="tiny" style="margin-top:10px">' + es(t('acc.cf_note_indirect')) + '</div></div>';
+
+    el.innerHTML =
+      UI.pageHead(t('acc.title'), t('acc.recap')) +
+      '<div class="card"><div class="card-title"><div class="seg">' + tabBtn('is', t('acc.tab_is'), '📄') + tabBtn('bs', t('acc.tab_bs'), '📒') + tabBtn('cf', t('acc.tab_cf'), '💵') + '</div></div></div>' +
+      (curTab === 'is' ? '<div class="card"><div class="card-title"><h3>📄 ' + es(t('acc.tab_is')) + '</h3><span class="hint">' + es(t('acc.title')) + '</span></div>' + UI.table(head, isRows) + '</div>' + flank : '') +
+      (curTab === 'bs' ? bsBlock : '') +
+      (curTab === 'cf' ? cfBlock : '');
+
+    el.querySelectorAll('[data-acc-tab]').forEach((b) => b.addEventListener('click', () => { S._accTab = b.getAttribute('data-acc-tab'); refreshNow(); }));
+    const bsSel = document.getElementById('acc-bs-year');
+    if (bsSel) bsSel.addEventListener('change', () => { S._accBsYear = Number(bsSel.value); refreshNow(); });
+  }
+
+  /* ============================================================
+     ANALYTICS — interactive dashboard (slicers, KPIs, trends)
+     ============================================================ */
+  function renderAnalytics(el) {
+    const F = finance();
+    const N = F.N;
+    const detail = (F.revenue && F.revenue.detail) || [];
+    const monthLabels = (I18N.lang() === 'en' ? M.MONTHS_EN : M.MONTHS);
+    const matPct = (F.cogs && F.cogs.materialPct) || 0;
+    const contribRatio = 1 - matPct / 100;
+
+    if (!detail.length) {
+      el.innerHTML = UI.pageHead(t('analytics.title'), t('analytics.subtitle')) + UI.emptyState('📊', t('analytics.no_products'), UI.btn(t('nav.revenue'), 'primary sm', { id: 'an-go-rev' }));
+      const goRev = document.getElementById('an-go-rev'); if (goRev) goRev.addEventListener('click', () => go('revenue'));
+      return;
+    }
+
+    const years = []; for (let y = 1; y <= N; y++) years.push('Y' + y);
+    // slicer state (defaults: latest year, all filters)
+    const st = S._an = S._an || {};
+    if (!(st.year >= 1 && st.year <= N)) st.year = N;
+    st.product = st.product || 'all'; st.band = st.band || 'all'; st.month = st.month || 'all';
+    const sy = st.year, py = Math.max(1, sy - 1);
+
+    const bandOf = (d) => (d == null || d <= 0) ? 0 : (d <= 10 ? 1 : (d <= 25 ? 2 : 3));
+    const bandLabels = ['0%', '1–10%', '11–25%', '26%+'];
+    let active = detail.slice();
+    if (st.product !== 'all') active = active.filter((s) => String(s.id) === String(st.product));
+    if (st.band !== 'all') active = active.filter((s) => bandOf(s.discountPct) === Number(st.band));
+
+    // --- flows: current-year values over the filtered stream set ---
+    const sumAnnual = (y) => active.reduce((a, s) => a + (s.annual[y] || 0), 0);
+    const sumMonthly = (y, m) => active.reduce((a, s) => a + ((s.monthly[y - 1] || [])[m - 1] || 0), 0);
+    const salesCur = sumAnnual(sy);
+    const salesPrev = sumAnnual(py);
+    const contribCur = salesCur * contribRatio;
+    const contribPrev = salesPrev * contribRatio;
+
+    // trend helper
+    const trend = (cur, prev) => (prev > 0 ? (cur - prev) / prev : (cur > 0 ? 1 : 0));
+    const arrow = (v) => (v > 0.001 ? '▲ +' : v < -0.001 ? '▼ ' : '◆ ') + pct(Math.abs(v) * 100, 1) + ' ' + t('analytics.vs_prev_year');
+
+    const kpiTone = (v) => (v > 0.001 ? 'good' : v < -0.001 ? 'bad' : 'gray');
+
+    const bv = F.pl.netProfit[sy], bpv = F.pl.netProfit[py];
+
+    // KPI cards
+    const kpiCards =
+      UI.kpi({ tone: 'tone-primary', label: t('analytics.kpi_sales'), value: money(salesCur), sub: arrow(trend(salesCur, salesPrev)) + ' · ' + t('year') + ' ' + sy }) +
+      UI.kpi({ tone: 'tone-green', label: t('analytics.kpi_gp'), value: money(F.grossProfit[sy]), sub: arrow(trend(F.grossProfit[sy], F.grossProfit[py])) + ' · ' + t('year') + ' ' + sy }) +
+      UI.kpi({ tone: 'tone-gold', label: t('analytics.kpi_gm'), value: pct(F.grossMargin[sy]) , sub: arrow(trend(F.grossMargin[sy], F.grossMargin[py])) }) +
+      UI.kpi({ tone: 'tone-indigo', label: t('analytics.kpi_np'), value: money(bv), sub: arrow(trend(bv, bpv)) + ' · ' + t('year') + ' ' + sy });
+
+    // Slicers
+    const productOpts = [{ value: 'all', label: t('analytics.all_products') }].concat(detail.map((s) => ({ value: String(s.id), label: s.name || ('Product ' + s.id) })));
+    const bandOpts = [{ value: 'all', label: t('analytics.all_bands') }].concat(bandLabels.map((l, i) => ({ value: String(i), label: l })));
+    const monthOpts = [{ value: 'all', label: t('analytics.all_months') }].concat(monthLabels.map((l, i) => ({ value: String(i + 1), label: l })));
+    const yearOpts = years.map((l, i) => ({ value: String(i + 1), label: t('year') + ' ' + (i + 1) }));
+    const slicerField = (label, id, opts, val) => '<div class="fld"><label>' + es(label) + '</label>' + UI.selectInput(opts, String(val), { id }) + '</div>';
+    const slicers =
+      '<div class="card section-bump"><div class="card-title"><h3>🎛 ' + es(t('analytics.slicers')) + '</h3><button class="btn ghost sm" id="an-reset">' + es(t('analytics.reset')) + '</button></div>' +
+      '<div class="grid g4">' +
+        slicerField(t('analytics.year'), 'an-year', yearOpts, st.year) +
+        slicerField(t('analytics.product'), 'an-product', productOpts, st.product) +
+        slicerField(t('analytics.band'), 'an-band', bandOpts, st.band) +
+        slicerField(t('analytics.month'), 'an-month', monthOpts, st.month) +
+      '</div></div>';
+
+    // Monthly trend (selected year + previous year), optionally highlight a month
+    const mCur = monthLabels.map((_, m) => Math.round(sumMonthly(sy, m + 1)));
+    const mPrev = py === sy ? null : monthLabels.map((_, m) => Math.round(sumMonthly(py, m + 1)));
+    const series = [{ name: t('year') + ' ' + sy, data: mCur, color: '#0ea5e9' }];
+    if (mPrev) series.push({ name: t('year') + ' ' + py, data: mPrev, color: '#94a3b8' });
+    const peak = mCur.reduce((b, v, i) => (v > mCur[b] ? i : b), 0);
+
+    // Sales & Profit (contribution) by product — selected year
+    const products = detail.map((s) => ({ name: s.name || ('Product ' + s.id), annual: s.annual[sy] || 0, contrib: (s.annual[sy] || 0) * contribRatio, band: bandOf(s.discountPct) }));
+    const byProdRevenue = products.map((s) => Math.round(s.annual));
+    const byProdContrib = products.map((s) => Math.round(s.contrib));
+
+    // Sales vs COGS by year (business-wide)
+    const revAll = F.revenue.annual.slice(1).map((v) => Math.round(v));
+    const cogsAll = F.cogs.annual.slice(1).map((v) => Math.round(v));
+    const gpAll = F.grossProfit.slice(1).map((v) => Math.round(v));
+
+    // Discount band analysis (selected year, all products)
+    const bands = [0, 1, 2, 3].map((b) => {
+      const inBand = detail.filter((s) => bandOf(s.discountPct) === b);
+      const rev = inBand.reduce((a, s) => a + (s.annual[sy] || 0), 0);
+      return { b, label: b === 0 ? t('analytics.no_discount') : bandLabels[b], rev, contrib: rev * contribRatio, count: inBand.length };
+    });
+
+    // Product-wise profit contribution table (selected year, filtered)
+    const contribTotal = active.reduce((a, s) => a + (s.annual[sy] || 0) * contribRatio, 0);
+    const contribRows = active.map((s) => {
+      const rv = s.annual[sy] || 0, ct = rv * contribRatio;
+      return { cells: [
+        { html: '<b>' + es(s.name || 'Product ' + s.id) + '</b><div class="tiny">' + bandLabels[bandOf(s.discountPct)] + '</div>' },
+        { r: true, html: money(rv) },
+        { r: true, html: money(ct) },
+        { r: true, html: contribTotal > 0 ? pct(ct / contribTotal * 100) : '—' }
+      ] };
+    });
+    contribRows.push({ cls: 'total', cells: [{ html: t('total') }, { r: true, html: money(active.reduce((a, s) => a + (s.annual[sy] || 0), 0)) }, { r: true, html: money(contribTotal) }, { r: true, html: '100%' }] });
+
+    el.innerHTML =
+      UI.pageHead(t('analytics.title'), t('analytics.subtitle') + ' · ' + t('analytics.metrics_context')) +
+      '<div class="kpi-grid">' + kpiCards + '</div>' +
+      slicers +
+      '<div class="card section-bump"><div class="card-title"><h3>📈 ' + es(t('analytics.monthly_trend')) + ' — ' + es(t('year') + ' ' + sy) + '</h3><span class="hint">' + es(t('analytics.peak_month')) + ': ' + es(monthLabels[peak]) + '</span></div><div class="chart-box tall" id="an-monthly"></div><div class="legend" id="lg-an-monthly"></div></div>' +
+      '<div class="two-col section-bump">' +
+        '<div class="card"><div class="card-title"><h3>🛒 ' + es(t('analytics.sales_by_product')) + ' — ' + es(t('year') + ' ' + sy) + '</h3></div><div class="chart-box" id="an-byprod"></div><div class="legend" id="lg-an-byprod"></div></div>' +
+        '<div class="card"><div class="card-title"><h3>⚖️ ' + es(t('analytics.sales_vs_cogs')) + '</h3></div><div class="chart-box" id="an-vscogs"></div><div class="legend" id="lg-an-vscogs"></div></div>' +
+      '</div>' +
+      '<div class="two-col section-bump">' +
+        '<div class="card"><div class="card-title"><h3>🏷 ' + es(t('analytics.discount_band')) + ' — ' + es(t('year') + ' ' + sy) + '</h3></div><div class="chart-box" id="an-band"></div>' +
+          '<div class="tbl-wrap"><table class="data"><thead><tr><th>' + t('analytics.band') + '</th><th class="r">' + t('analytics.revenue') + '</th><th class="r">' + t('analytics.profit') + '</th><th class="r">' + t('analytics.product') + '</th></tr></thead><tbody>' +
+          bands.map((b) => '<tr><td>' + es(b.label) + '</td><td class="r"><span class="num">' + money(b.rev) + '</span></td><td class="r"><span class="num">' + money(b.contrib) + '</span></td><td class="r">' + b.count + '</td></tr>').join('') +
+          '</tbody></table></div></div>' +
+        '<div class="card"><div class="card-title"><h3>🥧 ' + es(t('analytics.profit_contribution')) + '</h3></div>' + UI.table([{ label: t('analytics.product') }, { label: t('analytics.revenue'), r: true }, { label: t('pl.gross_profit') + ' (' + t('analytics.profit') + ')', r: true }, { label: t('analytics.contribution_pct'), r: true }], contribRows, { footnote: t('analytics.no_products') ? '' : '' }) + '</div>' +
+      '</div>';
+
+    // charts
+    if (document.getElementById('an-monthly')) {
+      Charts.lineChart(document.getElementById('an-monthly'), series, { labels: monthLabels, legend: document.getElementById('lg-an-monthly') });
+      if (st.month !== 'all') {
+        const mi = Number(st.month) - 1;
+        // annotate: draw a marker via a small overlay div is complex; instead re-render bar under it
+        const host = document.getElementById('an-monthly');
+        const tip = document.createElement('div');
+        tip.className = 'tiny';
+        tip.style.marginTop = '6px';
+        tip.textContent = monthLabels[mi] + ' ' + sy + ': ' + money(mCur[mi]);
+        host.parentElement.appendChild(tip);
+      }
+    }
+    if (document.getElementById('an-byprod')) Charts.groupBar(document.getElementById('an-byprod'), products.map((p) => p.name), [{ name: t('analytics.revenue'), data: byProdRevenue, color: '#0ea5e9' }, { name: t('analytics.profit'), data: byProdContrib, color: '#10b981' }], { labels: products.map((p) => p.name), legend: document.getElementById('lg-an-byprod') });
+    if (document.getElementById('an-vscogs')) Charts.groupBar(document.getElementById('an-vscogs'), years, [{ name: t('analytics.revenue'), data: revAll, color: '#0ea5e9' }, { name: t('analytics.cogs_label'), data: cogsAll, color: '#e11d48' }, { name: t('pl.gross_profit'), data: gpAll, color: '#10b981' }], { labels: years, legend: document.getElementById('lg-an-vscogs') });
+    if (document.getElementById('an-band')) Charts.barChart(document.getElementById('an-band'), bands.map((b) => b.label), bands.map((b) => Math.round(b.rev)), { labels: bands.map((b) => b.label), tickFmt: (v) => money(v) });
+
+    // slicer bindings
+    const bindSel = (id, key, transform) => {
+      const s = document.getElementById(id);
+      if (!s) return;
+      s.addEventListener('change', () => { S._an[key] = transform ? transform(s.value) : s.value; refreshNow(); });
+    };
+    bindSel('an-year', 'year', (v) => Number(v));
+    bindSel('an-product', 'product');
+    bindSel('an-band', 'band');
+    bindSel('an-month', 'month');
+    const rst = document.getElementById('an-reset');
+    if (rst) rst.addEventListener('click', () => { S._an = { year: N, product: 'all', band: 'all', month: 'all' }; refreshNow(); });
+  }
+
+
   function renderWc(el) {
     const F = finance();
     const p = S.proj;
@@ -1579,7 +1894,7 @@
     const p = S.proj;
     const F = finance();
     const isSyariah = p.financialMode === 'SYARIAH';
-    const mustShow = ['cover', 'exec_summary', 'profile', 'mode', 'assumptions', 'investment', 'capex', 'revenue', 'cogs', 'expenses', 'pl', 'cashflow', 'wc', 'financing', 'depreciation', 'breakeven', 'roi', 'npv', 'irr', 'payback', 'scenarios', 'sensitivity', 'ratios', 'budget', 'summary'];
+    const mustShow = ['cover', 'exec_summary', 'profile', 'mode', 'assumptions', 'investment', 'capex', 'revenue', 'cogs', 'expenses', 'pl', 'cashflow', 'wc', 'financing', 'depreciation', 'acc', 'analytics', 'breakeven', 'roi', 'npv', 'irr', 'payback', 'scenarios', 'sensitivity', 'ratios', 'budget', 'summary'];
     if (isSyariah) mustShow.push('islamic', 'screening', 'review', 'disclaimer');
     const sections = S.proj.reportSections || BizReports.defaultSections(p);
 

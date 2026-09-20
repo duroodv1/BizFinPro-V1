@@ -166,6 +166,74 @@
       SHEET(t('reports.cashflow'), rows);
     }
 
+    /* Accounting statements (ACC) */
+    if (include('acc') && F.acc && F.acc.is) {
+      const Is = F.acc.is, Bs = F.acc.bs, Cf = F.acc.cf;
+      const accRows = [[''].concat(years)];
+      accRows.push(build(t('acc.is_revenue'), Is.revenue, true));
+      accRows.push(build('(−) ' + t('acc.is_var_cogs'), Is.variy, true));
+      accRows.push(build('(−) ' + t('acc.is_fixed_cogs'), Is.fixedCogs, true));
+      accRows.push(build(t('acc.is_gross_profit'), Is.grossProfit, true));
+      accRows.push(build('(−) ' + t('acc.is_var_overhead'), Is.variableOpex, true));
+      accRows.push(build('(−) ' + t('acc.is_fixed_overhead'), Is.fixedOpex, true));
+      accRows.push(build(t('acc.is_ebitda'), Is.ebitda, true));
+      accRows.push(build('(−) ' + t('acc.is_da'), Is.dep, true));
+      accRows.push(build(t('acc.is_ebit'), Is.ebit, true));
+      accRows.push(build('(−) ' + t('pl.financing_cost'), Is.interest, true));
+      accRows.push(build(t('pl.pbt'), F.pl.pbt, true));
+      accRows.push(build('(−) ' + t('acc.is_tax'), Is.tax, true));
+      accRows.push(build(t('acc.is_net_income'), Is.netIncome, true));
+      SHEET('ACC — ' + t('acc.tab_is'), accRows);
+
+      const yE = N;
+      const tC = Bs.cash[yE] + Bs.ar[yE] + Bs.inv[yE] + (Bs.prepaid[yE] || 0);
+      const fN = Bs.fixedNet[yE] || 0;
+      const tA = tC + fN;
+      const tCL = Bs.ap[yE] + (Bs.taxPayable[yE] || 0);
+      const tL = tCL + (Bs.debt[yE] || 0);
+      const tE = Bs.contributedCapital + Bs.retainedEarnings[yE];
+      SHEET('ACC — ' + t('acc.tab_bs') + ' Y' + yE, [
+        [t('acc.bs_assets'), '', t('acc.bs_liab') + ' + ' + t('acc.bs_equity'), ''],
+        [t('acc.bs_cash'), P(Bs.cash[yE]), t('acc.bs_ap'), P(Bs.ap[yE])],
+        [t('acc.bs_ar'), P(Bs.ar[yE]), t('acc.bs_tax_payable'), P(Bs.taxPayable[yE] || 0)],
+        [t('acc.bs_inventory'), P(Bs.inv[yE]), t('acc.bs_total_current_liab'), P(tCL)],
+        [t('acc.bs_prepaid'), P(Bs.prepaid[yE] || 0), t('acc.bs_lt_debt'), P(Bs.debt[yE] || 0)],
+        [t('acc.bs_total_current'), P(tC), t('acc.bs_total_liab'), P(tL)],
+        [t('acc.bs_fixed_assets'), P(fN), t('acc.bs_contributed'), P(Bs.contributedCapital)],
+        [t('acc.bs_total_assets'), P(tA), t('acc.bs_re'), P(Bs.retainedEarnings[yE])],
+        ['', '', t('acc.bs_total_equity'), P(tE)],
+        ['', '', t('acc.bs_tlse'), P(tL + tE)]
+      ]);
+
+      const cfAccRows = [[''].concat(years)];
+      cfAccRows.push(build(t('acc.cf_net_income'), Cf.netIncome, true));
+      cfAccRows.push(build(t('acc.cf_da'), Cf.dep, true));
+      cfAccRows.push(build(t('acc.cf_d_ar'), Cf.dAr, true));
+      cfAccRows.push(build(t('acc.cf_d_inv'), Cf.dInv, true));
+      cfAccRows.push(build(t('acc.cf_d_prepaid'), Cf.dPrepaid, true));
+      cfAccRows.push(build(t('acc.cf_d_ap'), Cf.dAp, true));
+      cfAccRows.push(build(t('acc.cf_d_tax'), Cf.dTax, true));
+      cfAccRows.push(build(t('acc.cf_net_operating'), Cf.operating, true));
+      cfAccRows.push(build(t('acc.cf_capex'), Cf.capexOut, true));
+      cfAccRows.push(build(t('acc.cf_net_investing'), Cf.investing, true));
+      cfAccRows.push(build(t('acc.cf_debt_pay'), Cf.debtRepay, true));
+      cfAccRows.push(build(t('acc.cf_net_financing'), Cf.financing, true));
+      cfAccRows.push(build(t('acc.cf_end_cash'), Cf.closing, true));
+      SHEET('ACC — ' + t('acc.tab_cf'), cfAccRows);
+    }
+
+    /* Analytics summary */
+    if (include('analytics') && F.revenue.detail && F.revenue.detail.length) {
+      const contribRatio = 1 - ((F.cogs.materialPct || 0) / 100);
+      const dRows = [[t('analytics.product'), t('analytics.band'), t('analytics.revenue') + ' (Y1)', t('analytics.revenue') + ' (Y' + N + ')', t('analytics.profit') + ' (Y' + N + ')']];
+      const bandLabels = ['0%', '1–10%', '11–25%', '26%+'];
+      const bandOf = (d) => (d == null || d <= 0) ? 0 : (d <= 10 ? 1 : (d <= 25 ? 2 : 3));
+      F.revenue.detail.forEach((s) => {
+        dRows.push([s.name, bandLabels[bandOf(s.discountPct)], P(s.annual[1]), P(s.annual[N]), P((s.annual[N] || 0) * contribRatio)]);
+      });
+      SHEET(t('reports.analytics'), dRows);
+    }
+
     /* Working capital */
     if (include('wc')) {
       const rows = [[''].concat(years)];
