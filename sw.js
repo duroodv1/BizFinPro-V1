@@ -1,5 +1,5 @@
 /* BizFinPro Service Worker — offline-first PWA */
-const CACHE = 'bizfinpro-v8';
+const CACHE = 'bizfinpro-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const ASSETS = [
   './css/app.css',
   './js/i18n.js',
   './js/store.js',
+  './js/auth.js',
   './js/formats.js',
   './js/engine.js',
   './js/render.js',

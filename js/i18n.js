@@ -311,6 +311,28 @@
       delete: 'Padam', edit: 'Edit', name: 'Nama', per_project_note: 'Tetapan ini terpakai bagi projek semasa',
       last_saved: 'Disimpan terakhir', currency: 'Mata Wang', period: 'Tempoh', mode: 'Mod',
       copy: 'Salin', open: 'Buka', duplicate: 'Duplikat', rename: 'Nama Semula', export: 'Eksport'
+    },
+    auth: {
+      app_name: 'BizFinPro', tagline: 'Perancangan & Analisis Kewangan Perniagaan',
+      welcome: 'Selamat kembali', subtitle: 'Log masuk untuk mengurus projek anda.',
+      username: 'Nama Pengguna', password: 'Kata Laluan',
+      login: 'Log Masuk', register: 'Daftar Akaun', create_account: 'Daftar', back_login: 'Kembali ke Log Masuk',
+      new_user: 'Pengguna baharu?', have_account: 'Sudah ada akaun?',
+      logout: 'Log Keluar', switch_user: 'Tukar Pengguna',
+      first_run_title: 'Selamat datang ke BizFinPro', first_run_sub: 'Tiada akaun lagi. Daftar akaun pertama untuk bermula.',
+      create_first_account: 'Daftar Akaun Pertama',
+      err_name: 'Sila masukkan nama pengguna.', err_short: 'Kata laluan mesti sekurang-kurangnya 4 aksara.',
+      err_exists: 'Akaun ini sudah wujud.', err_login: 'Nama pengguna atau kata laluan salah.',
+      err_pw: 'Kata laluan semasa salah.', meet: 'Kata laluan sepadan.',
+      err_mismatch: 'Kata laluan tidak sepadan.',
+      managing: 'Akaun & Keselamatan', current_user: 'Akaun Semasa', change_pw: 'Tukar Kata Laluan',
+      del_account: 'Padam Akaun', accounts: 'Akaun pada Peranti Ini', no_accounts: 'Tiada akaun.',
+      login_hint: 'Akaun tersimpan di peranti ini sahaja — tiada pelayan.',
+      current_pw: 'Kata Laluan Semasa', new_pw: 'Kata Laluan Baharu', confirm_pw: 'Sahkan Kata Laluan',
+      logout_all: 'Log Keluar', delete_warn: 'Padam akaun ini dan SEMUA projeknya? Tindakan ini tidak boleh dibatalkan.',
+      chip_logout: 'Log Keluar',
+      session_continue: 'Teruskan', session_switch: 'Tukar Akaun',
+      greeting: 'Hai'
     }
   };
 
@@ -623,6 +645,28 @@
       delete: 'Delete', edit: 'Edit', name: 'Name', per_project_note: 'This setting applies to the current project',
       last_saved: 'Last saved', currency: 'Currency', period: 'Period', mode: 'Mode',
       copy: 'Copy', open: 'Open', duplicate: 'Duplicate', rename: 'Rename', export: 'Export'
+    },
+    auth: {
+      app_name: 'BizFinPro', tagline: 'Business Financial Planning & Analysis',
+      welcome: 'Welcome back', subtitle: 'Sign in to manage your projects.',
+      username: 'Username', password: 'Password',
+      login: 'Sign In', register: 'Register', create_account: 'Sign Up', back_login: 'Back to Sign In',
+      new_user: 'New user?', have_account: 'Already have an account?',
+      logout: 'Sign Out', switch_user: 'Switch User',
+      first_run_title: 'Welcome to BizFinPro', first_run_sub: 'No accounts yet. Create the first account to get started.',
+      create_first_account: 'Create First Account',
+      err_name: 'Please enter a username.', err_short: 'Password must be at least 4 characters.',
+      err_exists: 'This account already exists.', err_login: 'Incorrect username or password.',
+      err_pw: 'Current password is incorrect.', meet: 'Passwords match.',
+      err_mismatch: 'Passwords do not match.',
+      managing: 'Account & Security', current_user: 'Current Account', change_pw: 'Change Password',
+      del_account: 'Delete Account', accounts: 'Accounts on This Device', no_accounts: 'No accounts.',
+      login_hint: 'Accounts are stored on this device only — no server.',
+      current_pw: 'Current Password', new_pw: 'New Password', confirm_pw: 'Confirm Password',
+      logout_all: 'Sign Out', delete_warn: 'Delete this account and ALL its projects? This cannot be undone.',
+      chip_logout: 'Sign Out',
+      session_continue: 'Continue', session_switch: 'Switch Account',
+      greeting: 'Hi'
     }
   };
 

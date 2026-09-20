@@ -16,6 +16,7 @@
   // ---------- state ----------
   const S = {
     settings: Object.assign({}, M.defaultSettings()),
+    user: null,       // signed-in account (null = not authenticated)
     proj: null,        // current project (data)
     F: null,           // computed finance
     projectId: null,
@@ -254,8 +255,11 @@
       '<div class="tb-spacer"></div>' +
       (S.proj ? '<span class="tb-pill tb-bizname">' + es(truncate(S.proj.name, 26)) + '</span>' : '') +
       '<span class="tb-pill tb-bizname">' + es(cur()) + '</span>' +
-      (modeTxt ? '<span class="tb-pill mode ' + modeCls + '"><span class="dot"></span>' + es(t('mode.indicator')) + ': ' + es(modeTxt) + '</span>' : '');
+      (modeTxt ? '<span class="tb-pill mode ' + modeCls + '"><span class="dot"></span>' + es(t('mode.indicator')) + ': ' + es(modeTxt) + '</span>' : '') +
+      (S.user ? '<span class="tb-pill user" id="tb-user" title="' + es(t('auth.greeting')) + ', ' + es(S.user.name) + '">👤 ' + es(truncate(S.user.name, 16)) + '</span>' : '');
     document.getElementById('burger').addEventListener('click', () => { S.$sidebar.classList.toggle('open'); document.getElementById('scrim').classList.toggle('open'); });
+    const u = document.getElementById('tb-user');
+    if (u) u.addEventListener('click', () => go('settings'));
   }
   function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
@@ -327,6 +331,202 @@
   function cardGrid(cols, itemsHtml) { return '<div class="grid ' + cols + '">' + itemsHtml + '</div>'; }
   function kpiGrid(items) { return '<div class="kpi-grid">' + items.map((i) => UI.kpi(i)).join('') + '</div>'; }
   function sectionHead(title, sub) { return '<div class="card-title"><h3>' + es(title) + '</h3></div>'; }
+
+  /* ============================================================
+     AUTH — login / register gate + account management
+     ============================================================ */
+  function authAvatarName(name) { name = String(name || '?').trim(); return name ? name.charAt(0).toUpperCase() : '?'; }
+
+  function authCard(innerHtml) {
+    return '<div class="auth-wrap"><div class="auth-card">' +
+      '<div class="auth-brand"><img src="icon.svg" alt="BizFinPro">' +
+      '<div><div class="ab-name">' + es(t('auth.app_name')) + '</div>' +
+      '<div class="ab-tag">' + es(t('auth.tagline')) + '</div></div></div>' + innerHtml + '</div></div>';
+  }
+
+  // Full-screen login gate. Shown before the app shell exists.
+  function renderAuth(prefillName) {
+    const root = document.getElementById('app');
+    if (S.hasUsers !== true) {
+      // First run: no accounts yet — create the first one.
+      renderRegister();
+      return;
+    }
+    root.innerHTML = authCard(
+      '<div class="auth-title">' + es(t('auth.welcome')) + '</div>' +
+      '<div class="auth-sub">' + es(t('auth.subtitle')) + '</div>' +
+      '<div class="auth-err" id="auth-err"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.username')) + '</label><input id="auth-name" autocomplete="username" autocapitalize="off" value="' + es(prefillName || '') + '"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.password')) + '</label><input id="auth-pass" type="password" autocomplete="current-password"></div>' +
+      '<button class="btn primary" id="auth-submit" style="width:100%">' + es(t('auth.login')) + '</button>' +
+      '<div class="auth-toggle">' + es(t('auth.new_user')) + ' <b id="auth-to-register">' + es(t('auth.register')) + '</b></div>' +
+      (S.hasOtherUsers ? '<div class="auth-toggle">' + es(t('auth.switch_user')) + ': <b id="auth-switch">' + es(t('auth.accounts')) + '</b></div>' : '') +
+      '<div class="auth-hint">' + es(t('auth.login_hint')) + '</div>'
+    );
+    const errEl = document.getElementById('auth-err');
+    const nameEl = document.getElementById('auth-name');
+    const passEl = document.getElementById('auth-pass');
+    const submit = document.getElementById('auth-submit');
+    submit.onclick = () => {
+      Auth.login(nameEl.value, passEl.value).then((user) => finishAuth(user)).catch((e) => {
+        errEl.textContent = e.message; errEl.classList.add('show');
+      });
+    };
+    document.getElementById('auth-to-register').onclick = () => renderRegister();
+    const sw = document.getElementById('auth-switch');
+    if (sw) sw.onclick = () => renderUserPicker();
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') passEl.focus(); });
+    passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit.click(); });
+    setTimeout(() => { (prefillName ? passEl : nameEl).focus(); }, 0);
+  }
+
+  function renderRegister() {
+    const root = document.getElementById('app');
+    root.innerHTML = authCard(
+      '<div class="auth-title">' + es(t('auth.create_account')) + '</div>' +
+      '<div class="auth-sub">' + es(S.hasUsers ? t('auth.subtitle') : t('auth.first_run_sub')) + '</div>' +
+      '<div class="auth-err" id="reg-err"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.username')) + '</label><input id="reg-name" autocomplete="username" autocapitalize="off"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.password')) + '</label><input id="reg-pass" type="password" autocomplete="new-password"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.confirm_pw')) + '</label><input id="reg-pass2" type="password" autocomplete="new-password"></div>' +
+      '<div class="pw-match" id="reg-match">✓ ' + es(t('auth.meet')) + '</div>' +
+      '<button class="btn primary" id="reg-submit" style="width:100%">' + es(t('auth.create_account')) + '</button>' +
+      (S.hasUsers ? '<div class="auth-toggle">' + es(t('auth.have_account')) + ' <b id="reg-back">' + es(t('auth.back_login')) + '</b></div>' : '')
+    );
+    const errEl = document.getElementById('reg-err');
+    const nameEl = document.getElementById('reg-name');
+    const p1 = document.getElementById('reg-pass'); const p2 = document.getElementById('reg-pass2');
+    const match = document.getElementById('reg-match');
+    p2.addEventListener('input', () => match.classList.toggle('show', p1.value === p2.value && p2.value.length > 0));
+    const back = document.getElementById('reg-back');
+    if (back) back.onclick = () => renderAuth();
+    document.getElementById('reg-submit').onclick = async () => {
+      const name = nameEl.value.trim(); const pass = p1.value;
+      if (pass !== p2.value) { errEl.textContent = t('auth.err_mismatch'); errEl.classList.add('show'); return; }
+      try {
+        const user = await Auth.register(name, pass);
+        await finishAuth(user);
+      } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+    };
+    setTimeout(() => nameEl.focus(), 0);
+  }
+
+  // Pick any account to sign into (from the login screen).
+  function renderUserPicker() {
+    const root = document.getElementById('app');
+    const users = S._users || [];
+    root.innerHTML = authCard(
+      '<div class="auth-title">' + es(t('auth.switch_user')) + '</div>' +
+      '<div class="auth-sub">' + es(t('auth.accounts')) + '</div>' +
+      '<div class="auth-userlist">' +
+        users.map((u) => '<div class="auth-user" data-uid="' + es(u.id) + '"><div class="au-av">' + es(authAvatarName(u.name)) + '</div><div><div class="au-name">' + es(u.name) + '</div><div class="au-sub">' + es(t('common.last_saved')) + ': ' + es(u.createdAt ? FMT.fmtDate(u.createdAt) : '—') + '</div></div></div>').join('') +
+      '</div>' +
+      '<div class="auth-toggle">' + es(t('auth.new_user')) + ' <b id="pick-register">' + es(t('auth.register')) + '</b></div>' +
+      '<div class="auth-toggle"><b id="pick-back">← ' + es(t('auth.back_login')) + '</b></div>'
+    );
+    root.querySelectorAll('[data-uid]').forEach((el) => el.addEventListener('click', () => enterUserForm(el.getAttribute('data-uid'))));
+    document.getElementById('pick-register').onclick = () => renderRegister();
+    document.getElementById('pick-back').onclick = () => renderAuth();
+  }
+
+  function enterUserForm(userId) {
+    const users = S._users || [];
+    const u = users.find((x) => x.id === userId);
+    if (u) renderAuth(u.name);
+  }
+
+  async function finishAuth(user) {
+    S.user = user;
+    Store.setOwner(user.id);   // scope all project reads/writes to this account
+    await Store.putSession(user.id).catch(() => {});
+    S.page = 'home';
+    await bootstrapApp();
+  }
+
+  async function preLogin() {
+    const users = await Store.users.all().catch(() => []);
+    S._users = users;
+    S.hasUsers = users.length > 0;
+    S.hasOtherUsers = users.length > 1;
+    if (!S.hasUsers) { renderAuth(); return; }
+    // Show the login screen; pre-fill the last-signed-in account for convenience.
+    const sessionId = await Store.getSession().catch(() => null);
+    let prefill = '';
+    if (sessionId) {
+      const u = users.find((x) => x.id === sessionId);
+      if (u) prefill = u.name;
+    }
+    renderAuth(prefill);
+  }
+
+  // ---------- account management (in-app) ----------
+  function renderAccountCard(user) {
+    const others = (S._users || []).filter((u) => u.id !== user.id);
+    const inner = '<div class="grid g2">' +
+      '<div class="card"><div class="card-title"><h3>👤 ' + es(t('auth.current_user')) + '</h3></div>' +
+        '<div class="row2"><div class="lbl">' + es(t('auth.username')) + '<small>' + es(t('auth.login_hint')) + '</small></div>' +
+        '<span class="tb-pill user">' + es(user.name) + '</span></div></div>' +
+      '<div class="card"><div class="card-title"><h3>' + es(t('auth.managing')) + '</h3></div>' +
+        '<div class="actions-row" style="flex-direction:column;align-items:stretch">' +
+          '<button class="btn ghost" id="btn-changepw">🔑 ' + es(t('auth.change_pw')) + '</button>' +
+          '<button class="btn ghost" id="btn-switch">⇄ ' + es(t('auth.switch_user')) + '</button>' +
+          '<button class="btn ghost" id="btn-logout">↩ ' + es(t('auth.logout')) + '</button>' +
+          '<button class="btn danger" id="btn-del-account">🗑 ' + es(t('auth.del_account')) + '</button>' +
+        '</div></div></div>' +
+      (others.length ? '<div class="card section-bump"><div class="card-title"><h3>' + es(t('auth.accounts')) + '</h3></div><div class="auth-userlist">' +
+        others.map((u) => '<div class="auth-user" data-uid="' + es(u.id) + '" style="cursor:default"><div class="au-av">' + es(authAvatarName(u.name)) + '</div><div><div class="au-name">' + es(u.name) + '</div><div class="au-sub">' + es(t('common.last_saved')) + ': ' + es(u.createdAt ? FMT.fmtDate(u.createdAt) : '—') + '</div></div></div>').join('') +
+      '</div></div>' : '');
+    return inner;
+  }
+
+  function bindAccountActions() {
+    const user = S.user;
+    document.getElementById('btn-changepw').onclick = () => changePasswordModal();
+    document.getElementById('btn-switch').onclick = () => signOutToLogin();
+    document.getElementById('btn-logout').onclick = () => signOutToLogin();
+    document.getElementById('btn-del-account').onclick = () => {
+      UI.modal(t('auth.del_account'),
+        '<div class="alert warn"><span class="ico">⚠️</span><div>' + es(t('auth.delete_warn')) + '</div></div>' +
+        '<p><b>' + es(user.name) + '</b></p>',
+        '<button class="btn ghost" data-close>' + es(t('cancel')) + '</button><button class="btn danger" id="del-ok">' + es(t('common.delete')) + '</button>');
+      document.getElementById('del-ok').onclick = async () => {
+        await Auth.removeAccount(user.id).catch(() => {});
+        UI.closeAllModals();
+        await signOutToLogin();
+      };
+    };
+  }
+
+  function signOutToLogin() {
+    return Auth.logout().then(async () => {
+      S.user = null; S.proj = null; S.projectId = null; S.F = null;
+      const root = document.getElementById('app'); root.innerHTML = '';
+      await preLogin();
+    });
+  }
+
+  function changePasswordModal() {
+    const user = S.user;
+    UI.modal(t('auth.change_pw'),
+      '<div class="auth-field"><label>' + es(t('auth.current_pw')) + '</label><input type="password" id="pw-cur"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.new_pw')) + '</label><input type="password" id="pw-new"></div>' +
+      '<div class="auth-field"><label>' + es(t('auth.confirm_pw')) + '</label><input type="password" id="pw-new2"></div>' +
+      '<div class="auth-err" id="pw-err" style="margin-top:10px"></div>',
+      '<button class="btn ghost" data-close>' + es(t('cancel')) + '</button><button class="btn primary" id="pw-ok">' + es(t('save')) + '</button>');
+    document.getElementById('pw-ok').onclick = async () => {
+      const errEl = document.getElementById('pw-err');
+      const cur = document.getElementById('pw-cur').value;
+      const n1 = document.getElementById('pw-new').value;
+      const n2 = document.getElementById('pw-new2').value;
+      if (n1 !== n2) { errEl.textContent = t('auth.err_mismatch'); errEl.classList.add('show'); return; }
+      try {
+        await Auth.changePassword(user, cur, n1);
+        UI.closeAllModals();
+        UI.toast(t('auth.change_pw') + ' ✓', 'ok');
+      } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+    };
+  }
+
 
   /* ============================================================
      HOME — Dashboard
@@ -494,12 +694,19 @@
     const d = M.demoProject(mode);
     d.updatedAt = Date.now();
     await Store.putProject(d);
-    S.settings.demosSeeded = true;
+    markDemosSeeded();
     await saveSettings().catch(() => {});
     await setProject(d);
     go('home');
     UI.toast(t('common.' + (mode === 'SYARIAH' ? 'demo_s' : 'demo_k')) + ' ✓', 'ok');
   }
+
+  // Per-account demo seed flag. The legacy `demosSeeded` key from v1.5 (single-user)
+  // is consumed exactly once — by the first account that starts with an empty list —
+  // so existing users who deliberately cleared their demos don't get them back, while
+  // every new account still gets its own demos.
+  function demosFlagKey() { return 'demosSeeded_' + (S.user && S.user.id ? S.user.id : 'anon'); }
+  function markDemosSeeded() { S.settings[demosFlagKey()] = true; }
 
   async function openProject(id) {
     const p = await Store.getProject(id);
@@ -2025,6 +2232,7 @@
           '<button class="btn danger" id="btn-clear">🗑 ' + es(t('settings.clear_all')) + '</button>' +
         '</div>' +
       '</div></div>' +
+      (S.user ? renderAccountCard(S.user) : '') +
       (p ? '<div class="card section-bump"><div class="card-title"><h3>' + es(t('settings.fin_mode')) + ' — ' + es(t('common.per_project_note')) + '</h3></div>' +
         '<div class="row2"><div class="lbl">' + es(t('mode.label')) + '<small>' + es(t('settings.mode_switch_warn')) + '</small></div>'+ modeChipTag(p.financialMode) + '</div>' +
         '<div class="actions-row" style="margin-top:6px">' +
@@ -2045,9 +2253,11 @@
       UI.modal(t('settings.clear_all'), '<p>' + es(t('settings.clear_all') + '?') + '</p>',
         '<button class="btn ghost" data-close>' + es(t('cancel')) + '</button><button class="btn danger" id="confirm-clear">' + es(t('common.delete')) + '</button>');
       document.getElementById('confirm-clear').addEventListener('click', async () => {
-        const hadSeeded = S.settings.demosSeeded;
+        // preserve per-account demo-seed flags (settings are shared across accounts)
+        const demoFlags = {};
+        Object.keys(S.settings).forEach((k) => { if (k.indexOf('demosSeeded') === 0) demoFlags[k] = S.settings[k]; });
         await Store.clearAll();
-        S.settings = Object.assign({}, M.defaultSettings(), { demosSeeded: hadSeeded });
+        S.settings = Object.assign({}, M.defaultSettings(), demoFlags);
         await saveSettings().catch(() => {});
         S.proj = null; S.projectId = null; S.F = null; UI.closeAllModals(); go('projects'); UI.toast(t('settings.clear_all') + ' ✓', 'ok');
       });
@@ -2056,6 +2266,7 @@
     const bms = document.getElementById('btn-mode-s');
     if (bmk) bmk.addEventListener('click', () => modeSwitchConfirm('KONVENSIONAL'));
     if (bms) bms.addEventListener('click', () => modeSwitchConfirm('SYARIAH'));
+    if (S.user) bindAccountActions();
   }
 
   /* ---------- Mode switching (settings → financial mode) ---------- */
@@ -2101,15 +2312,20 @@
   async function bootstrap() {
     await loadSettings();
     if (S.settings.lang) I18N.setLang(S.settings.lang);
+    // Login gate comes first — nothing else renders until authenticated.
+    await preLogin();
+  }
+
+  // Runs after a successful login/register: mounts the app shell for this account.
+  async function bootstrapApp() {
     renderShell();
-    // Seed the two demo projects on first launch (once). Subsequent launches
+    // Seed the two demo projects per-account on first launch (once). Subsequent launches
     // respect the user's project list — deleting all projects does not re-seed.
     await seedDemoProjects();
     // SW registration (offline-first); works on http(s), ignored on file://
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
     }
-    // pick project: last opened or first
     const list = await Store.listProjects().catch(() => []);
     if (S.projectId) {
       const p = await Store.getProject(S.projectId);
@@ -2127,13 +2343,27 @@
   async function seedDemoProjects() {
     try {
       const list = await Store.listProjects();
-      // Seed demos only once, so a deliberate "clear all" is respected afterwards.
-      if (list.length === 0 && !S.settings.demosSeeded) {
+      const fk = demosFlagKey();
+      // Already decided for this account — nothing to do.
+      if (S.settings[fk] !== undefined) return;
+
+      // One-time migration from v1.5 single-user `demosSeeded` flag: the migrating
+      // account inherits "already seeded" so a deliberate clear-all stays respected,
+      // and the flag is consumed so future new accounts still get their own demos.
+      if (S.settings.demosSeeded === true && !S.settings._demosMigrated) {
+        S.settings[fk] = true;
+        S.settings._demosMigrated = true;
+        await saveSettings();
+        return;
+      }
+
+      // Fresh account — seed once if it has nothing yet.
+      if (list.length === 0) {
         const dk = M.demoProject('KONVENSIONAL');
         const ds = M.demoProject('SYARIAH');
         await Store.putProject(dk);
         await Store.putProject(ds);
-        S.settings.demosSeeded = true;
+        S.settings[fk] = true;
         await saveSettings();
       }
     } catch (e) { /* storage unavailable — demos load per-session below */ }
